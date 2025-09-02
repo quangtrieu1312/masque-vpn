@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log"
@@ -19,12 +20,13 @@ import (
 	"golang.org/x/sys/unix"
 
 	connectip "github.com/quic-go/connect-ip-go"
-	"github.com/quic-go/connect-ip-go/integration/internal/utils"
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/vishvananda/netlink"
 	"github.com/yosida95/uritemplate/v3"
+	
+    "github.com/quangtrieu1312/masque-vpn/internal/utils"
 )
 
 var serverSocketRcv, serverSocketSend int
@@ -155,22 +157,28 @@ func htons(host uint16) uint16 {
 	return (host<<8)&0xff00 | (host>>8)&0xff
 }
 
-func run(bindTo netip.AddrPort, remoteAddr netip.Addr, route netip.Prefix, ipProtocol uint8) error {
+func run(bindTo netip.AddrPort, remoteAddr netip.Addr, route netip.Prefix, ipProtocol uint8, serverCertPath string, serverKeyPath string, clientCAPath string) error {
 	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: bindTo.Addr().AsSlice(), Port: int(bindTo.Port())})
 	if err != nil {
 		return fmt.Errorf("failed to listen on UDP: %w", err)
 	}
 	defer udpConn.Close()
 
-	cert, err := tls.LoadX509KeyPair("cert.pem", "key.pem")
+	cert, err := tls.LoadX509KeyPair(serverCertPath, serverKeyPath)
 	if err != nil {
 		return fmt.Errorf("failed to load TLS certificate: %w", err)
 	}
-
+	if certPool, err := x509.SystemCertPool(); err != nil {
+        panic(err)
+    } else if caCertPEM, err := os.ReadFile(clientCAPath); err != nil {
+		panic(err)
+	} else if ok := certPool.AppendCertsFromPEM(caCertPEM); !ok {
+		panic("invalid cert in CA PEM")
+	}
 	template := uritemplate.MustNew(fmt.Sprintf("https://proxy:%d/vpn", bindTo.Port()))
 	ln, err := quic.ListenEarly(
 		udpConn,
-		http3.ConfigureTLSConfig(&tls.Config{Certificates: []tls.Certificate{cert}}),
+		http3.ConfigureTLSConfig(&tls.Config{ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: certPool, Certificates: []tls.Certificate{cert}}),
 		&quic.Config{EnableDatagrams: true},
 	)
 	if err != nil {

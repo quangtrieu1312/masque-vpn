@@ -11,7 +11,10 @@ func LastIP(prefix netip.Prefix) netip.Addr {
 
 	hostBits := len(bytes)*8 - prefix.Bits()
 	for i := len(bytes) - 1; i >= 0; i-- {
-		setBits := min(8, hostBits)
+        setBits := 8
+        if setBits > hostBits {
+            setBits = hostBits
+        }
 		if setBits <= 0 {
 			break
 		}
@@ -20,9 +23,9 @@ func LastIP(prefix netip.Prefix) netip.Addr {
 	}
 
 	if addr.Is4() {
-		return netip.AddrFrom4([4]byte(bytes[:4]))
+		return netip.AddrFrom4(*(*[4]byte)(bytes[:4]))
 	}
-	return netip.AddrFrom16([16]byte(bytes))
+	return netip.AddrFrom16(*(*[16]byte)(bytes))
 }
 
 func PrefixToIPNet(prefix netip.Prefix) *net.IPNet {

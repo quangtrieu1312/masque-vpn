@@ -1,6 +1,6 @@
 module github.com/quangtrieu1312/masque-vpn/client
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/quic-go/connect-ip-go v0.0.0-20241020031425-59b7c60ba830
@@ -22,6 +22,7 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/onsi/ginkgo/v2 v2.9.5 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/quangtrieu1312/masque-vpn v0.0.0-20250901032100-8360804a268d // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/rogpeppe/go-internal v1.13.1 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
