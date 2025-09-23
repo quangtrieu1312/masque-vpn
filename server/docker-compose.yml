@@ -1,0 +1,31 @@
+services:
+  masque:
+    build: .
+    container_name: masque
+    environment:
+      - SERVER_INTERFACE=${SERVER_INTERFACE}
+      - BIND_ADDR=${BIND_ADDR}
+      - LISTEN_PORT=${LISTEN_PORT}
+      - ASSIGN_ADDR=${ASSIGN_ADDR}
+      - ROUTE=${ROUTE}
+      - FILTER_IP_PROTOCOL=${FILTER_IP_PROTOCOL}
+      - QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING=${QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING}
+      - QUIC_GO_DISABLE_GSO=${QUIC_GO_DISABLE_GSO}
+      - SERVER_CERT_PATH=${SERVER_CERT_PATH}
+      - SERVER_KEY_PATH=${SERVER_KEY_PATH}
+      - CLIENT_CA_PATH=${CLIENT_CA_PATH}
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    privileged: true
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - 443:443/udp
+    volumes:
+      - ./certs:/certs
+      - data:/data
+    command: /run.sh
+
+volumes:
+  data:

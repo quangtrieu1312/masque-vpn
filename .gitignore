@@ -1,0 +1,6 @@
+**/build/**
+server/certs/server/**
+server/certs/client/**
+client/certs/**
+**/.env
+**/keys.txt 
