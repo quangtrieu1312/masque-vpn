@@ -1,0 +1,37 @@
+services:
+  masque-server:
+    build: .
+    container_name: masque-server
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL}
+      - WAN_INTERFACE=${WAN_INTERFACE}
+      - BIND_ADDR=${BIND_ADDR}
+      - LISTEN_PORT=${LISTEN_PORT}
+      - VIRTUAL_IP=${VIRTUAL_IP}
+      - CLIENT_CIDR=${CLIENT_CIDR}
+      - CLIENT_ROUTE=${CLIENT_ROUTE}
+      - FILTER_IP_PROTOCOL=${FILTER_IP_PROTOCOL}
+      - QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING=${QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING}
+      - QUIC_GO_DISABLE_GSO=${QUIC_GO_DISABLE_GSO}
+      - SERVER_CA_DIR=${SERVER_CA_DIR}
+      - SERVER_CA_PATH=${SERVER_CA_DIR}/certs/ca.cert.pem
+      - SERVER_CERT_DIR=${SERVER_CERT_DIR}
+      - SERVER_CERT_PATH=${SERVER_CERT_DIR}/server.crt
+      - SERVER_KEY_PATH=${SERVER_CERT_DIR}/server.key
+      - CLIENT_CA_DIR=${CLIENT_CA_DIR}
+      - CLIENT_CA_PATH=${CLIENT_CA_DIR}/certs/ca.cert.pem
+      - CLIENT_CERT_DIR=${CLIENT_CERT_DIR}
+      - SAN_DNS_LIST=${SAN_DNS_LIST}
+      - SAN_IP_LIST=${SAN_IP_LIST}
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    privileged: true
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - 443:443/udp
+    volumes:
+      - ./certs:/certs
+      - ./ca:/ca
+    command: /run.sh

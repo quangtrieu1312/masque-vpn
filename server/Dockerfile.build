@@ -1,0 +1,7 @@
+FROM golang:tip-alpine3.22
+
+WORKDIR /src
+
+RUN mkdir -p /build /src
+
+CMD ["go", "build", "-o", "/build/server"]

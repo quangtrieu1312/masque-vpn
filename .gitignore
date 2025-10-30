@@ -1,0 +1,10 @@
+**/build/**
+server/certs/server/**
+server/certs/client/**
+server/ca/server/**
+server/ca/client/**
+client/certs/**
+client/config/masque0.conf
+**/.env
+**/keys.txt
+
