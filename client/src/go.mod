@@ -3,9 +3,8 @@ module github.com/quangtrieu1312/masque-vpn/client
 go 1.25.0
 
 require (
-	github.com/quic-go/connect-ip-go v0.0.0-20241020031425-59b7c60ba830
-	github.com/quic-go/connect-ip-go/integration v0.0.0-20250630131729-23eb1888940b
-	github.com/quic-go/quic-go v0.48.0
+	github.com/quic-go/connect-ip-go v0.1.0
+	github.com/quic-go/quic-go v0.53.0
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/stretchr/testify v1.9.0
 	github.com/vishvananda/netlink v1.3.0
@@ -26,10 +25,11 @@ require (
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/rogpeppe/go-internal v1.13.1 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
-	go.uber.org/mock v0.4.0 // indirect
+	go.uber.org/mock v0.5.0 // indirect
 	golang.org/x/crypto v0.26.0 // indirect
 	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842 // indirect
 	golang.org/x/mod v0.18.0 // indirect
+	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/text v0.17.0 // indirect
 	golang.org/x/tools v0.22.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
