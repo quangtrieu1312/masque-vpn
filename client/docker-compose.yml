@@ -1,0 +1,14 @@
+services:
+  masque-client:
+    build: .
+    container_name: masque-client
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    privileged: true
+    volumes:
+      - ./certs:/certs
+      - ./masque0.conf:/etc/masque/masque0.conf
+
+volumes:
+  data:

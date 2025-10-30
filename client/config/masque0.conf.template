@@ -1,0 +1,15 @@
+LOG_LEVEL=info
+LOG_PATH=/etc/masque/logs/masque.log
+
+ENABLE_KEY_LOG=false
+KEY_LOG_PATH=/tmp/masque_keylog.txt
+
+SERVER=FQDN:443
+SERVER_CA_PATH=/etc/masque/certs/ca.crt
+
+CLIENT_CERT_PATH=/etc/masque/certs/client.crt
+CLIENT_KEY_PATH=/etc/masque/certs/client.key
+
+BIDIRECTION=false
+BIDIRECTION_ALLOW_SOURCE=
+BIDIRECTION_ALLOW_DEST=
