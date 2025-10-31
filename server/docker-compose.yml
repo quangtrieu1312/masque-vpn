@@ -1,7 +1,6 @@
 services:
   masque-server:
     build: .
-    container_name: masque-server
     environment:
       - LOG_LEVEL=${LOG_LEVEL}
       - WAN_INTERFACE=${WAN_INTERFACE}
