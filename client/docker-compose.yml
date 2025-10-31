@@ -1,14 +1,21 @@
 services:
-  masque-client:
+  masque-client-1:
     build: .
-    container_name: masque-client
+    container_name: client1
     cap_add:
       - NET_ADMIN
       - NET_RAW
     privileged: true
     volumes:
-      - ./certs:/certs
-      - ./masque0.conf:/etc/masque/masque0.conf
-
-volumes:
-  data:
+      - ./certs:/etc/masque/certs
+      - ./config/masque0.conf:/etc/masque/masque0.conf
+  masque-client-2:
+    build: .
+    container_name: client2
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    privileged: true
+    volumes:
+      - ./certs:/etc/masque/certs
+      - ./config/masque0.conf:/etc/masque/masque0.conf
