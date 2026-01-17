@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+source /opt/masque-server/scripts/helper.sh
+
 POSITIONAL_ARGS=()
 FORCEUPDATE=0
 
@@ -32,7 +34,7 @@ if [[ -z "$clientName" ]]; then
     exit 1
 fi
 
-WORK_DIR="$CLIENT_CERT_DIR"
+WORK_DIR=$CLIENT_CERT_DIR
 
 pushd . >/dev/null
 mkdir -p $WORK_DIR
@@ -45,11 +47,13 @@ else
     randId=$(dd if=/dev/urandom bs=1k count=1 2>/dev/null | base64 | tr -dc 'a-zA-Z0-9' | cut -c1-64)
     mkdir -p "$clientName"
     openssl req -new -newkey rsa:2048 -nodes -keyout $clientName/client.key -out $clientName/client.csr \
-        -config /config/client-req.conf -extensions v3_ca \
+        -config /opt/masque-server/config/client-req.conf -extensions v3_ca \
         -subj "/C=US/ST=TX/L=Dallas/O=Masque Client/CN=$randId"
-    openssl ca -in $clientName/client.csr -out $clientName/client.crt -config /config/client-ca.conf -rand_serial -batch -notext
+    openssl ca -in $clientName/client.csr -out $clientName/client.crt -config /opt/masque-server/config/client-ca.conf -rand_serial -batch -notext
     cat $CLIENT_CA_DIR/certs/ca.cert.pem >>$clientName/client.crt
-    log "info" "New cert id $randId has been created"
+    cat $SERVER_CA_DIR/certs/ca.cert.prem >$clientName/ca.crt
+    zip $clientName/bundle.zip $clientName/*.crt $clientName/*.key
+    log "info" "New cert id $randId has been created. Bundle available at $WORK_DIR/$clientName."
 fi
 log "info" "Done"
 popd >/dev/null

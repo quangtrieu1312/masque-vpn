@@ -7,8 +7,8 @@ services:
       - NET_RAW
     privileged: true
     volumes:
-      - ./certs:/etc/masque/certs
-      - ./config/masque0.conf:/etc/masque/masque0.conf
+      - ./certs:/opt/masque/certs
+      - ./config:/opt/masque/config
   masque-client-2:
     build: .
     container_name: client2
@@ -17,5 +17,5 @@ services:
       - NET_RAW
     privileged: true
     volumes:
-      - ./certs:/etc/masque/certs
-      - ./config/masque0.conf:/etc/masque/masque0.conf
+      - ./certs:/opt/masque/certs
+      - ./config:/opt/masque/config

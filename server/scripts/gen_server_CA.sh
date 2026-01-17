@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+source /opt/masque-server/scripts/helper.sh
+
 POSITIONAL_ARGS=()
 FORCEUPDATE=0
 C="US"
@@ -62,19 +64,19 @@ function log {
     echo -e "$(date --rfc-3339 ns) genServerCA [$level]: $msg"
 }
 
-WORK_DIR="$SERVER_CA_DIR"
+WORK_DIR=$SERVER_CA_DIR
 
 log "info" "Checking server CA"
 pushd . >/dev/null
 mkdir -p $WORK_DIR
 cd $WORK_DIR
-if [[ ! -f $SERVER_CA_PATH ]] || [[ $FORCEUPDATE -eq 1 ]]; then
+if [[ ! -f $WORK_DIR/private/ca.key.pem ]] || [[ $FORCEUPDATE -eq 1 ]]; then
     log "info" "Creating CA."
     rm -rf ./*
     mkdir -p ./private ./certs ./crl ./newcerts
     touch ./index.txt ./serial
     openssl genrsa -out private/ca.key.pem 4096
-    openssl req -config /config/ca-req.conf -key private/ca.key.pem -new -x509 \
+    openssl req -config /opt/masque-server/config/ca-req.conf -key private/ca.key.pem -new -x509 \
         -sha256 -extensions v3_ca -out certs/ca.cert.pem \
         -subj "/C=$C/ST=$ST/L=$L/O=$O/OU=$OU/CN=$CN" \
         -days 3650

@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 	"os/exec"
+	"os/signal"
+    "syscall"
 
 	"golang.org/x/sys/unix"
 
@@ -26,6 +28,9 @@ import (
 	"github.com/songgao/water"
 	"github.com/vishvananda/netlink"
 	"github.com/yosida95/uritemplate/v3"
+
+    "gorm.io/driver/sqlite"
+    "gorm.io/gorm"
 )
 
 
@@ -34,31 +39,48 @@ var tunTapDevice *water.Interface
 
 func main() {
     ctx := context.WithoutCancel(context.Background())
-    logLevel := os.Getenv("LOG_LEVEL")
+    sigc := make(chan os.Signal, 1)
+    signal.Notify(sigc,
+        syscall.SIGHUP,
+        syscall.SIGINT,
+        syscall.SIGTERM,
+        syscall.SIGQUIT)
+    go func(ctxt *context.Context) {
+        <-sigc
+        GracefullyShutDown(ctxt)
+    }(&ctx)
+
+    ParseConfig(&ctx)
+    logLevel := ctx.Value("LOG_LEVEL").(string)
     GetLoggerInstance()
     UpdateLogLevelName(logLevel)
-    ifaceName := os.Getenv("WAN_INTERFACE")
-    bindAddr := netip.MustParseAddr(os.Getenv("BIND_ADDR"))
-    listenPort, err := strconv.Atoi(os.Getenv("LISTEN_PORT"))
+    ifaceName := ctx.Value("WAN_INTERFACE").(string)
+    bindAddr := netip.MustParseAddr(ctx.Value("BIND_ADDR").(string))
+    listenPort, err := strconv.Atoi(ctx.Value("LISTEN_PORT").(string))
 
 	if err != nil {
-		LogFatal(fmt.Sprintf("failed to parse proxy port: %v", err))
+		LogFatal(fmt.Sprintf("Failed to parse proxy port: %v", err))
 	}
 	bindTo := netip.AddrPortFrom( bindAddr, uint16(listenPort))
 
-	virtIp, virtSubnet, err := net.ParseCIDR(os.Getenv("VIRTUAL_IP"))
+	virtIp, virtSubnet, err := net.ParseCIDR(ctx.Value("TUNNEL_IP").(string))
 	if err != nil {
-		LogFatal(fmt.Sprintf("failed to parse VIRTUAL_IP: %v", err))
+		LogFatal(fmt.Sprintf("Failed to parse TUNNEL_IP: %v", err))
 	}
-	clientIp, clientSubnet, err := net.ParseCIDR(os.Getenv("CLIENT_CIDR"))
+	clientIp, clientSubnet, err := net.ParseCIDR(ctx.Value("CLIENT_CIDR").(string))
     GetIpManagerInstance(clientIp, clientSubnet)
-	route := netip.MustParsePrefix(os.Getenv("CLIENT_ROUTE"))
-	ipProtocol, err := strconv.ParseUint(os.Getenv("FILTER_IP_PROTOCOL"), 10, 8)
+	route := netip.MustParsePrefix(ctx.Value("CLIENT_ROUTE").(string))
+	ipProtocol, err := strconv.ParseUint(ctx.Value("FILTER_IP_PROTOCOL").(string), 10, 8)
 	if err != nil {
 		LogFatal(fmt.Sprintf("failed to parse FILTER_IP_PROTOCOL: %v", err))
 	}
 
-	link, err := netlink.LinkByName(ifaceName)
+	mtu, err := strconv.ParseUint(ctx.Value("TUNNEL_MTU").(string), 10, 64)
+	if err != nil {
+        mtu = 1416
+        LogInfo(fmt.Sprintf("Tunnel MTU is set to default = %d", mtu))
+    }
+    link, err := netlink.LinkByName(ifaceName)
 	if err != nil {
 		LogFatal(fmt.Sprintf("failed to get %s interface: %v", ifaceName, err))
 	}
@@ -84,11 +106,11 @@ func main() {
 	}
 
 	netBitSize, _ := virtSubnet.Mask.Size()
-	dev, err := createTunTapDevice(ctx, virtIp.String() + "/" + strconv.Itoa(netBitSize))
+	dev, err := createTunTapDevice(ctx, virtIp.String() + "/" + strconv.Itoa(netBitSize), int(mtu))
 	if err != nil {
 		LogFatal(fmt.Sprintf("failed to create tun/tap device: %v", err))
 	}
-	tunTapDevice = dev
+    tunTapDevice = dev
 
 	fdSnd, err := createSendSocket(ethAddr)
 	if err != nil {
@@ -96,51 +118,81 @@ func main() {
 	}
 	serverSocketSend = fdSnd
 
-    serverCertPath := os.Getenv("SERVER_CERT_PATH")
-    serverKeyPath := os.Getenv("SERVER_KEY_PATH")
-    clientCAPath := os.Getenv("CLIENT_CA_PATH")
+    serverCertPath := ctx.Value("SERVER_CERT_PATH").(string)
+    serverKeyPath := ctx.Value("SERVER_KEY_PATH").(string)
+    clientCAPath := ctx.Value("CLIENT_CA_PATH").(string)
 	
 	upChan := make(chan bool)
-    go func() {
+    go func(ctxt *context.Context) {
         for {
             isRunning := <- upChan
             if (isRunning) {
-                postUp()
+                PostUp(ctxt)
             } else {
-                postDown()
+                GracefullyShutDown(ctxt)
             }
         }
-    }()
+    }(&ctx)
+    Bootstrap(&ctx)
 	if err := run(ctx, upChan, bindTo, route, uint8(ipProtocol), serverCertPath, serverKeyPath, clientCAPath); err != nil {
 		LogFatal(fmt.Sprintf("%v",err))
 	}
     LogInfo("Shutting down masque server.")
 }
 
-func postUp() {
-    LogInfo("Running post up")
-    cmd := exec.Command("/sbin/iptables", "-t", "nat", "-A", "POSTROUTING", "-o", "eth+", "-j", "MASQUERADE")
-    LogInfo(fmt.Sprintf("Running command: /sbin/iptables"))
+
+func Bootstrap(ctx *context.Context) {
+    LogInfo("Server in bootstrap phase")
+    cmd := exec.Command("/bin/bash", "-c", SCRIPT_DIR + "/bootstrap.sh")
     _, err := cmd.Output()
     if err != nil {
-        LogFatal(fmt.Sprintf("Error running post up command: %v", err))
+        LogFatal(fmt.Sprintf("Failed bootstrap scripts: %v", err))
+    }
+
+    db, err := gorm.Open(sqlite.Open("masque.db"), &gorm.Config{})
+    if err != nil {
+        LogFatal("Failed to connect database")
+    }
+    // Migrate the schema
+    db.AutoMigrate(&Client{})
+    db.AutoMigrate(&Role{})
+    db.AutoMigrate(&Resource{})
+}
+
+func PostUp(ctx *context.Context) {
+    LogInfo("Server in post-up phase")
+    cmd := exec.Command("/bin/bash", "-c", SCRIPT_DIR + "/postup.sh")
+    _, err := cmd.Output()
+    if err != nil {
+        LogFatal(fmt.Sprintf("Cannot run postup scripts: %v", err))
     }
 }
 
-func postDown() {
-    LogInfo("Running post down")
+func PreDown() {
+    LogInfo("Server in pre-down phase")
+    cmd := exec.Command("/bin/bash", "-c", SCRIPT_DIR + "/predown.sh")
+    _, err := cmd.Output()
+    if err != nil {
+        LogFatal(fmt.Sprintf("Cannot run predown scripts: %v", err))
+    }
 }
 
-func createTunTapDevice(ctx context.Context, virtCIDR string) (*water.Interface, error) {
+func GracefullyShutDown(ctx *context.Context) {
+    LogInfo("Shutting down")
+    PreDown()
+    (*ctx).Done()
+}
+
+func createTunTapDevice(ctx context.Context, virtCIDR string, mtu int) (*water.Interface, error) {
 	dev, err := water.New(water.Config{DeviceType: water.TUN})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create TUN device: %w", err)
+		return nil, fmt.Errorf("Failed to create TUN device: %w", err)
 	}
-	LogInfo(fmt.Sprintf("created TUN device: %s", dev.Name()))
+	LogInfo(fmt.Sprintf("Created TUN device: %s", dev.Name()))
 
 	link, err := netlink.LinkByName(dev.Name())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get TUN interface: %w", err)
+		return nil, fmt.Errorf("Failed to get TUN interface: %w", err)
 	}
 	if err := netlink.LinkSetUp(link); err != nil {
 		return nil, fmt.Errorf("failed to bring up TUN interface: %w", err)
@@ -150,6 +202,7 @@ func createTunTapDevice(ctx context.Context, virtCIDR string) (*water.Interface,
         return nil, fmt.Errorf("Failed to assign IP to %v: %v", dev.Name(), err)
     }
     netlink.AddrAdd(link, addr)
+    netlink.LinkSetMTU(link, mtu)
     prefixAddr, err := netip.ParseAddr(GetAssignSubnet().IP.String())
     if err != nil {
         return  nil, fmt.Errorf("Failed to parse address: %w", err)
@@ -173,15 +226,15 @@ func createSendSocket(addr netip.Addr) (int, error) {
 func createSendSocketIPv4(addr netip.Addr) (int, error) {
 	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_RAW, unix.IPPROTO_RAW)
 	if err != nil {
-		return 0, fmt.Errorf("creating socket: %w", err)
+		return 0, fmt.Errorf("Creating socket: %w", err)
 	}
 	if err := unix.SetsockoptInt(fd, unix.IPPROTO_IP, unix.IP_HDRINCL, 1); err != nil {
-		return 0, fmt.Errorf("setting IP_HDRINCL: %w", err)
+		return 0, fmt.Errorf("Setting IP_HDRINCL: %w", err)
 	}
     sa := &unix.SockaddrInet4{Port: 0} // raw sockets don't use ports
     copy(sa.Addr[:], addr.AsSlice())
     if err := unix.Bind(fd, sa); err != nil {
-        return 0, fmt.Errorf("binding socket ipv4 to %s: %w", addr, err)
+        return 0, fmt.Errorf("Binding socket ipv4 to %s: %w", addr, err)
     }
 	return fd, nil
 }
@@ -189,15 +242,15 @@ func createSendSocketIPv4(addr netip.Addr) (int, error) {
 func createSendSocketIPv6(addr netip.Addr) (int, error) {
 	fd, err := unix.Socket(unix.AF_INET6, unix.SOCK_RAW, unix.IPPROTO_RAW)
 	if err != nil {
-		return 0, fmt.Errorf("creating socket: %w", err)
+		return 0, fmt.Errorf("Creating socket: %w", err)
 	}
 	if err := unix.SetsockoptInt(fd, unix.IPPROTO_IPV6, unix.IPV6_HDRINCL, 1); err != nil {
-		return 0, fmt.Errorf("setting IPV6_HDRINCL: %w", err)
+		return 0, fmt.Errorf("Setting IPV6_HDRINCL: %w", err)
 	}
     sa := &unix.SockaddrInet6{Port: 0} // raw sockets don't use ports
     copy(sa.Addr[:], addr.AsSlice())
     if err := unix.Bind(fd, sa); err != nil {
-        return 0, fmt.Errorf("binding socket ipv6 to %s: %w", addr, err)
+        return 0, fmt.Errorf("Binding socket ipv6 to %s: %w", addr, err)
     }
 	return fd, nil
 }
@@ -211,36 +264,42 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, route 
     defer cancel()
     udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: bindTo.Addr().AsSlice(), Port: int(bindTo.Port())})
 	if err != nil {
-		return fmt.Errorf("failed to listen on UDP: %w", err)
+		return fmt.Errorf("Failed to listen on UDP: %w", err)
 	}
 	defer udpConn.Close()
 
 	cert, err := tls.LoadX509KeyPair(serverCertPath, serverKeyPath)
 	if err != nil {
-		return fmt.Errorf("failed to load TLS certificate: %w", err)
+		return fmt.Errorf("Failed to load TLS certificate: %w", err)
 	}
 	certPool, err := x509.SystemCertPool()
     if err != nil {
-        panic(err)
+		return fmt.Errorf("Cannot create cert pool: %w", err)
     }
     caCertPEM, err := os.ReadFile(clientCAPath)
     if err != nil {
-		panic(err)
+        return fmt.Errorf("Cannot read client CA:", err)
 	}
     ok := certPool.AppendCertsFromPEM(caCertPEM)
     if !ok {
-		panic("invalid cert in CA PEM")
+		return fmt.Errorf("Invalid cert")
 	}
 	template := uritemplate.MustNew(fmt.Sprintf("https://masque:%d/vpn", bindTo.Port()))
-	ln, err := quic.ListenEarly(
+	serverConf := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		GetConfigForClient: func(hi *tls.ClientHelloInfo) (*tls.Config, error) {
+			serverConf := &tls.Config{
+		        Certificates:          []tls.Certificate{cert},
+				ClientAuth:            tls.RequireAndVerifyClientCert,
+				ClientCAs:             certPool,
+				VerifyPeerCertificate: GetClientValidator(hi),
+			}
+			return serverConf, nil
+		},
+	}
+    ln, err := quic.ListenEarly(
 		udpConn,
-		http3.ConfigureTLSConfig(
-            &tls.Config{
-                ClientAuth: tls.RequireAndVerifyClientCert,
-                ClientCAs: certPool,
-                Certificates: []tls.Certificate{cert},
-            },
-        ),
+		http3.ConfigureTLSConfig(serverConf),
 		&quic.Config{
             EnableDatagrams: true,
             MaxIdleTimeout: 30*time.Second,
@@ -305,7 +364,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, route 
         tunChan := make(chan []byte)
         go func() {
             clientIp := <-localChan
-			LogInfo(fmt.Sprintf("Got new client with IP %v", clientIp))
+			LogDebug(fmt.Sprintf("Got new client with IP %v", clientIp))
             mu.Lock()
             ipToTunChan[clientIp] = tunChan
             mu.Unlock()

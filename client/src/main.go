@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"time"
     "strings"
+	"os/exec"
     //"sync"
 
 	connectip "github.com/quic-go/connect-ip-go"
@@ -30,7 +31,7 @@ import (
 
 func parseConfig(ctx *context.Context) {
     var configPath string
-    flag.StringVar(&configPath,"f", "/etc/masque/masque0.conf", "Path to config file")
+    flag.StringVar(&configPath,"f", "/opt/masque/config/masque.conf", "Path to config file")
     file, err := os.Open(configPath)
     if err != nil {
         log.Fatalf("Failed to open config file %v: %v", configPath, err)
@@ -64,6 +65,30 @@ func parseConfig(ctx *context.Context) {
             log.Fatalf("Invalid config format")
         }
         (*ctx) = context.WithValue(*ctx, k, v)
+    }
+}
+
+func PreUp(ctx *context.Context) {
+    LogInfo("Exec pre up")
+    cmd := exec.Command("/sbin/ip", "rule", "add", "not", "to", (*ctx).Value("SERVER_IP").(string), "table", "54321")
+    LogInfo(fmt.Sprintf("Running command: /sbin/ip"))
+    _, err := cmd.Output()
+    if err != nil {
+        LogFatal(fmt.Sprintf("Error running pre up command: %v", err))
+    }
+}
+
+func PostUp() {
+    LogInfo("Exec post up")
+}
+
+func PostDown() {
+    LogInfo("Exec post down")
+    cmd := exec.Command("/sbin/ip", "rule", "del", "table", "54321")
+    LogInfo(fmt.Sprintf("Running command: /sbin/ip"))
+    _, err := cmd.Output()
+    if err != nil {
+        LogFatal(fmt.Sprintf("Error running post down command: %v", err))
     }
 }
 
@@ -107,6 +132,7 @@ func main() {
     } else {
         serverIp = ip
     }
+    ctx = context.WithValue(ctx, "SERVER_IP", serverIp.String())
     LogInfo(fmt.Sprintf("Connecting to %v", serverIp))
 	serverAddr := netip.AddrPortFrom(serverIp, uint16(serverPort))
     enableKeyLog, err := strconv.ParseBool(ctx.Value("ENABLE_KEY_LOG").(string))
@@ -127,8 +153,10 @@ func main() {
             case isRunning := <- tunneling:
                 if (isRunning) {
                     LogInfo("Masque is up")
+                    PostUp()
                 } else {
                     LogInfo("Masque is down")
+                    PostDown()
                     cancel()
                 }
                 return
@@ -183,24 +211,7 @@ func establishMASQUEConn(ctx context.Context, serverAddr netip.AddrPort, serverF
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to listen on UDP: %w", err)
 	}
-    /*
-    fd, err := udpConn.SyscallConn()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create file descriptor on UDPConn: %w", err)
-    }
-    mark := 12345
-    err = fd.Control(func(fd uintptr) {
-        unix.SetsockoptInt(
-            int(fd),
-            unix.SOL_SOCKET,
-            unix.SO_MARK,
-            int(mark),
-        )
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to change socket option: %w", err)
-	} 
-    */
+
     // load tls configuration
     CertFilePath := ctx.Value("CLIENT_CERT_PATH").(string)
     KeyFilePath := ctx.Value("CLIENT_KEY_PATH").(string)
@@ -245,7 +256,7 @@ func establishMASQUEConn(ctx context.Context, serverAddr netip.AddrPort, serverF
 		tlsConf,
 		&quic.Config{
 			EnableDatagrams:   true,
-			InitialPacketSize: 1350,
+			InitialPacketSize: 1500,
             KeepAlivePeriod: 5*time.Second,
 		},
 	)
@@ -298,16 +309,16 @@ func establishTunTapAndRoutes(ctx context.Context, routes []connectip.IPRoute, l
 		return nil, fmt.Errorf("failed to bring up TUN interface: %w", err)
 	}
 
+    PreUp(&ctx)
 	for _, route := range routes {
 		LogDebug(fmt.Sprintf("adding routes for %s - %s (protocol: %d)", route.StartIP, route.EndIP, route.IPProtocol))
 		for _, prefix := range route.Prefixes() {
-			r := &netlink.Route{
-				LinkIndex: link.Attrs().Index,
-				Dst:       PrefixToIPNet(prefix),
-			}
-			if err := netlink.RouteAdd(r); err != nil {
-				return nil, fmt.Errorf("failed to add route: %w", err)
-			}
+            cmd := exec.Command("/sbin/ip", "route", "add", prefix.String() , "dev", dev.Name(), "table", "54321")
+            LogInfo(fmt.Sprintf("Adding route: %v", prefix.String()))
+            _, err := cmd.Output()
+            if err != nil {
+                return nil, fmt.Errorf("Failed to add route: %v", err)
+            }
 		}
 	}
     return dev, nil

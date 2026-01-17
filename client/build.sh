@@ -1,4 +1,6 @@
-scriptFolder=$(dirname $(realpath '$0'))
+scriptFolder=$(dirname $(realpath $0))
+pushd .
+trap 'popd' EXIT SIGINT SIGHUP
 mkdir -p ./build
 rm -rf ./build/*
 sudo docker build . -f Dockerfile.build -t masque-client-builder

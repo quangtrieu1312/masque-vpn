@@ -12,13 +12,11 @@ type IpStatus int
 const (
     UNASSIGNED IpStatus = iota
     ASSIGNED
-    RESERVED_FOR_ROUTER
 )
 
 var ipStatusName = map[IpStatus]string {
     UNASSIGNED: "UNASSIGNED",
     ASSIGNED: "ASSIGNED",
-    RESERVED_FOR_ROUTER: "RESERVED_FOR_ROUTER",
 }
 
 func ConvertStringToIpStatus(statusName string) IpStatus {
@@ -27,8 +25,6 @@ func ConvertStringToIpStatus(statusName string) IpStatus {
         return UNASSIGNED
     case "ASSIGNED":
         return ASSIGNED
-    case "RESERVED_FOR_ROUTER":
-        return RESERVED_FOR_ROUTER
     default:
         LogError(fmt.Sprintf("[ERROR]: Invalid ip status: %v. Defaulting to `ASSIGNED`", statusName))
         return ASSIGNED

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+source /opt/masque-server/scripts/helper.sh
+
 POSITIONAL_ARGS=()
 FORCEUPDATE=0
 
@@ -84,7 +86,7 @@ function log {
     echo -e "$(date --rfc-3339 ns) genServerCert [$level]: $msg"
 }
 
-WORK_DIR="$SERVER_CERT_DIR"
+WORK_DIR=$SERVER_CERT_DIR
 
 log "info" "Start"
 pushd . >/dev/null
@@ -93,12 +95,12 @@ cd $WORK_DIR
 if [[ ! -f $SERVER_CA_DIR/certs/ca.cert.pem ]]; then
     log "error" "No server CA found. Something must went wrong."
     exit 1
-elif [[ -f $SERVER_CERT_PATH ]] && [[ $FORCEUPDATE -eq 0 ]]; then
+elif [[ -f $SERVER_CERT_DIR/server.key ]] && [[ $FORCEUPDATE -eq 0 ]]; then
     log "info" "Server cert already exists. Nothing to do."
 else
     log "info" "Generating server cert"
     tempConf=$(mktemp)
-    cat /config/server-req.conf > $tempConf
+    cat /opt/masque-server/config/server-req.conf > $tempConf
     dnsListLength=${#DNSLIST[@]}
     ipListLength=${#IPLIST[@]}
     sans=""
@@ -121,7 +123,7 @@ else
     openssl req -new -newkey rsa:2048 -nodes -keyout server.key -out server.csr \
         -config $tempConf -reqexts v3_ca \
         -subj "/C=$C/ST=$ST/L=$L/O=$O/OU=$OU/CN=$CN"
-    openssl ca -in ./server.csr -out ./server.crt -config /config/server-ca.conf -rand_serial -batch -notext
+    openssl ca -in ./server.csr -out ./server.crt -config /opt/masque-server/config/server-ca.conf -rand_serial -batch -notext
     cat $SERVER_CA_DIR/certs/ca.cert.pem >>./server.crt
 fi
 log "info" "Done"
