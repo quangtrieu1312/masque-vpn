@@ -334,7 +334,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
         clientId := r.TLS.PeerCertificates[0].Subject.CommonName
 		LogDebug(fmt.Sprintf("Handle new HTTP client %v", clientId))
         conCtx := context.WithValue(ctx, "clientId", clientId)
-        GetClientResources(&conCtx, db.conn, clientId)
+        GetClientResources(&conCtx, clientId)
 		req, err := connectip.ParseRequest(r, template)
 		if err != nil {
 			var perr *connectip.RequestParseError
@@ -395,7 +395,7 @@ func handleConn(contxt *context.Context, tunChan chan []byte,  conn *connectip.C
     mu.Lock()
     ipToTunChan[peerAddr] = tunChan
     mu.Unlock()
-    clientResources, cerr := GetClientResources(&ctx, db.conn, clientId)
+    clientResources, cerr := GetClientResources(&ctx, clientId)
     if cerr != nil {
         return cerr
     }
