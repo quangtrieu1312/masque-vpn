@@ -36,6 +36,9 @@ import (
 
 var serverSocketSend int
 var tunTapDevice *water.Interface
+var db *gorm.DB
+var mu sync.RWMutex
+var ipToTunChan map[string](chan []byte)
 
 func main() {
     ctx := context.WithoutCancel(context.Background())
@@ -67,9 +70,6 @@ func main() {
 	if err != nil {
 		LogFatal(fmt.Sprintf("Failed to parse TUNNEL_IP: %v", err))
 	}
-	clientIp, clientSubnet, err := net.ParseCIDR(ctx.Value("CLIENT_CIDR").(string))
-    GetIpManagerInstance(clientIp, clientSubnet)
-	route := netip.MustParsePrefix(ctx.Value("CLIENT_ROUTE").(string))
 	ipProtocol, err := strconv.ParseUint(ctx.Value("FILTER_IP_PROTOCOL").(string), 10, 8)
 	if err != nil {
 		LogFatal(fmt.Sprintf("failed to parse FILTER_IP_PROTOCOL: %v", err))
@@ -106,7 +106,7 @@ func main() {
 	}
 
 	netBitSize, _ := virtSubnet.Mask.Size()
-	dev, err := createTunTapDevice(ctx, virtIp.String() + "/" + strconv.Itoa(netBitSize), int(mtu))
+	dev, err := createTunTapDevice(ctx, virtIp.String(), netBitSize, int(mtu))
 	if err != nil {
 		LogFatal(fmt.Sprintf("failed to create tun/tap device: %v", err))
 	}
@@ -118,10 +118,6 @@ func main() {
 	}
 	serverSocketSend = fdSnd
 
-    serverCertPath := ctx.Value("SERVER_CERT_PATH").(string)
-    serverKeyPath := ctx.Value("SERVER_KEY_PATH").(string)
-    clientCAPath := ctx.Value("CLIENT_CA_PATH").(string)
-	
 	upChan := make(chan bool)
     go func(ctxt *context.Context) {
         for {
@@ -134,7 +130,7 @@ func main() {
         }
     }(&ctx)
     Bootstrap(&ctx)
-	if err := run(ctx, upChan, bindTo, route, uint8(ipProtocol), serverCertPath, serverKeyPath, clientCAPath); err != nil {
+	if err := run(ctx, upChan, bindTo, uint8(ipProtocol)); err != nil {
 		LogFatal(fmt.Sprintf("%v",err))
 	}
     LogInfo("Shutting down masque server.")
@@ -149,7 +145,7 @@ func Bootstrap(ctx *context.Context) {
         LogFatal(fmt.Sprintf("Failed bootstrap scripts: %v", err))
     }
 
-    db, err := gorm.Open(sqlite.Open("masque.db"), &gorm.Config{})
+    db, err := gorm.Open(sqlite.Open(DB_PATH), &gorm.Config{})
     if err != nil {
         LogFatal("Failed to connect database")
     }
@@ -157,6 +153,8 @@ func Bootstrap(ctx *context.Context) {
     db.AutoMigrate(&Client{})
     db.AutoMigrate(&Role{})
     db.AutoMigrate(&Resource{})
+    db.AutoMigrate(&IP{})
+    db.AutoMigrate(&DHCP{})
 }
 
 func PostUp(ctx *context.Context) {
@@ -183,7 +181,7 @@ func GracefullyShutDown(ctx *context.Context) {
     (*ctx).Done()
 }
 
-func createTunTapDevice(ctx context.Context, virtCIDR string, mtu int) (*water.Interface, error) {
+func createTunTapDevice(ctx context.Context, virtIp string, virtPrefixLen int, mtu int) (*water.Interface, error) {
 	dev, err := water.New(water.Config{DeviceType: water.TUN})
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create TUN device: %w", err)
@@ -197,18 +195,17 @@ func createTunTapDevice(ctx context.Context, virtCIDR string, mtu int) (*water.I
 	if err := netlink.LinkSetUp(link); err != nil {
 		return nil, fmt.Errorf("failed to bring up TUN interface: %w", err)
 	}
-    addr, err := netlink.ParseAddr(virtCIDR)
+    addr, err := netlink.ParseAddr(virtIp + "/" + string(virtPrefixLen))
     if err != nil {
         return nil, fmt.Errorf("Failed to assign IP to %v: %v", dev.Name(), err)
     }
     netlink.AddrAdd(link, addr)
     netlink.LinkSetMTU(link, mtu)
-    prefixAddr, err := netip.ParseAddr(GetAssignSubnet().IP.String())
+    prefixAddr, err := netip.ParseAddr(virtIp)
     if err != nil {
         return  nil, fmt.Errorf("Failed to parse address: %w", err)
     }
-    bitmask, _ := GetAssignSubnet().Mask.Size()
-    prefix := netip.PrefixFrom(prefixAddr, bitmask)
+    prefix := netip.PrefixFrom(prefixAddr, virtPrefixLen)
     route := &netlink.Route{ LinkIndex: link.Attrs().Index, Dst: PrefixToIPNet(prefix) }
 	if err := netlink.RouteAdd(route); err != nil {
 		return nil, fmt.Errorf("Failed to add route: %w", err)
@@ -259,7 +256,7 @@ func htons(host uint16) uint16 {
 	return (host<<8)&0xff00 | (host>>8)&0xff
 }
 
-func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, route netip.Prefix, ipProtocol uint8, serverCertPath string, serverKeyPath string, clientCAPath string) error {
+func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProtocol uint8) error {
     ctx, cancel := context.WithCancel(ctxt)
     defer cancel()
     udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: bindTo.Addr().AsSlice(), Port: int(bindTo.Port())})
@@ -268,7 +265,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, route 
 	}
 	defer udpConn.Close()
 
-	cert, err := tls.LoadX509KeyPair(serverCertPath, serverKeyPath)
+	cert, err := tls.LoadX509KeyPair(SERVER_CERT_PATH, SERVER_KEY_PATH)
 	if err != nil {
 		return fmt.Errorf("Failed to load TLS certificate: %w", err)
 	}
@@ -276,7 +273,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, route 
     if err != nil {
 		return fmt.Errorf("Cannot create cert pool: %w", err)
     }
-    caCertPEM, err := os.ReadFile(clientCAPath)
+    caCertPEM, err := os.ReadFile(CLIENT_CA_PATH)
     if err != nil {
         return fmt.Errorf("Cannot read client CA:", err)
 	}
@@ -336,7 +333,9 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, route 
     }()
 	mux.HandleFunc("/vpn", func(w http.ResponseWriter, r *http.Request) {
 		LogDebug(fmt.Sprintf("Handle new HTTP client"))
-        clientUUID := (*r.TLS.PeerCertificates[0]).Subject.CommonName
+        clientId := (*r.TLS.PeerCertificates[0]).Subject.CommonName
+        conCtx := context.WithValue(ctx, "clientId", clientId)
+        GetClientResources(&conCtx, db, clientId)
 		req, err := connectip.ParseRequest(r, template)
 		if err != nil {
 			var perr *connectip.RequestParseError
@@ -354,16 +353,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, route 
 			return
 		}
 
-        localChan := make(chan string)
-        tunChan := make(chan []byte)
-        go func() {
-            clientIp := <-localChan
-			LogDebug(fmt.Sprintf("Got new client with IP %v", clientIp))
-            mu.Lock()
-            ipToTunChan[clientIp] = tunChan
-            mu.Unlock()
-        }()
-		if err := handleConn(ctx, localChan, tunChan, conn, route, ipProtocol); err != nil {
+		if err := handleConn(conCtx, make(chan []byte), conn, ipProtocol); err != nil {
 			LogError(fmt.Sprintf("failed to handle connection: %v", err))
 		}
 	})
@@ -380,7 +370,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, route 
 	return nil
 }
 
-func handleConn(contxt context.Context, parentChan chan<- string, tunChan <-chan []byte,  conn *connectip.Conn, route netip.Prefix, ipProtocol uint8) error {
+func handleConn(contxt context.Context, tunChan chan []byte,  conn *connectip.Conn, ipProtocol uint8) error {
 	ctx, cancel := context.WithTimeout(contxt, 5*time.Second)
 	defer cancel()
     LogDebug("Start connectip flow")
@@ -389,11 +379,12 @@ func handleConn(contxt context.Context, parentChan chan<- string, tunChan <-chan
     // Note:
     // We can assign any subnet size here but I'm using /32 for simplicity
     // I may want to go back to this hardcoded number when I see issues for site-to-side VPN
-    peerAddr, _, perr := GetAndIncrementNextIp()
+    clientId := ctx.Value("clientId").(string)
+    peerAddr, perr := AssignIPToClient(&ctx, db, clientId)
     if perr != nil {
         return fmt.Errorf("Failed to get available IP: %w", perr)
     }
-    addr, e := netip.ParseAddr(peerAddr.String())
+    addr, e := netip.ParseAddr(peerAddr)
     if e != nil {
         return fmt.Errorf("Failed to parse address: %w", e)
     }
@@ -402,10 +393,23 @@ func handleConn(contxt context.Context, parentChan chan<- string, tunChan <-chan
 	if err := conn.AssignAddresses(ctx, []netip.Prefix{ipPrefix}); err != nil {
 		return fmt.Errorf("failed to assign addresses: %w", err)
 	}
-    parentChan <- peerAddr.String()
-	if err := conn.AdvertiseRoute(ctx, []connectip.IPRoute{
-		{StartIP: route.Addr(), EndIP: LastIP(route), IPProtocol: ipProtocol},
-	}); err != nil {
+    mu.Lock()
+    ipToTunChan[peerAddr] = tunChan
+    mu.Unlock()
+    clientResources, cerr := GetClientResources(&ctx, db, clientId)
+    if cerr != nil {
+        return cerr
+    }
+    clientRoutes := []connectip.IPRoute{}
+    for i := 0; i < len(clientResources); i++ {
+        r, e := netip.ParsePrefix(clientResources[i].Value)
+        if e != nil {
+            continue
+        }
+        connectipRoute := connectip.IPRoute{StartIP: r.Addr(), EndIP: LastIP(r), IPProtocol: ipProtocol}
+        clientRoutes = append(clientRoutes, connectipRoute)
+    }
+	if err := conn.AdvertiseRoute(ctx, clientRoutes); err != nil {
 		return fmt.Errorf("failed to advertise route: %w", err)
 	}
 

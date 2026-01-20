@@ -1,9 +1,54 @@
 package main
 
 import (
+    "fmt"
 	"net"
 	"net/netip"
 )
+
+func FirstIP(cidr string) (string, error) {
+    prefix, err := netip.ParsePrefix(cidr)
+    if err != nil {
+        return "", err
+    }
+    netAddr := prefix.Addr()
+    if !prefix.Contains(netAddr.Next()) {
+        return "", fmt.Errorf("Cannot handle /32")
+    }
+    return netAddr.Next().String(), nil
+}
+
+func NextIP(ip string, cidr string) (string, error) {
+    prefix, err := netip.ParsePrefix(cidr)
+    if err != nil {
+        return "", err
+    }
+
+    nextAddr, er := netip.ParseAddr(ip)
+    if er != nil {
+        return "", err
+    }
+
+    if !prefix.Contains(nextAddr.Next()) {
+        return "", fmt.Errorf("Out of IP")
+    }
+    return nextAddr.Next().String(), nil
+
+}
+
+func IncreaseIp(ip net.IP, ipnet *net.IPNet) {
+    oldIp:= make(net.IP, len(ip))
+    copy(oldIp, ip)
+	for j := len(ip) - 1; j >= 0; j-- {
+		(ip)[j]++
+		if (ip)[j] > 0 {
+			break
+		}
+	}
+    if (!ipnet.Contains(ip)) {
+        ip=oldIp.Mask(ipnet.Mask)
+    }
+}
 
 func LastIP(prefix netip.Prefix) netip.Addr {
 	addr := prefix.Addr()
