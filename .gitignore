@@ -3,10 +3,10 @@ server/certs/server/**
 server/certs/client/**
 server/ca/server/**
 server/ca/client/**
-server/config/masqued.conf
+server/masqued.conf
 
 client/certs/**
-client/config/masque.conf
+client/masque.conf
 
 **/.env
 **/keys.txt

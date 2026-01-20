@@ -286,16 +286,9 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, route 
 	}
 	template := uritemplate.MustNew(fmt.Sprintf("https://masque:%d/vpn", bindTo.Port()))
 	serverConf := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		GetConfigForClient: func(hi *tls.ClientHelloInfo) (*tls.Config, error) {
-			serverConf := &tls.Config{
-		        Certificates:          []tls.Certificate{cert},
-				ClientAuth:            tls.RequireAndVerifyClientCert,
-				ClientCAs:             certPool,
-				VerifyPeerCertificate: GetClientValidator(hi),
-			}
-			return serverConf, nil
-		},
+	    Certificates:          []tls.Certificate{cert},
+	    ClientAuth:            tls.RequireAndVerifyClientCert,
+	    ClientCAs:             certPool,
 	}
     ln, err := quic.ListenEarly(
 		udpConn,
@@ -343,6 +336,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, route 
     }()
 	mux.HandleFunc("/vpn", func(w http.ResponseWriter, r *http.Request) {
 		LogDebug(fmt.Sprintf("Handle new HTTP client"))
+        clientUUID := (*r.TLS.PeerCertificates[0]).Subject.CommonName
 		req, err := connectip.ParseRequest(r, template)
 		if err != nil {
 			var perr *connectip.RequestParseError

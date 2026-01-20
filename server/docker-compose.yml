@@ -10,6 +10,6 @@ services:
     ports:
       - 443:443/udp
     volumes:
-      - ./certs:${CERT_DIR}
-      - ./ca:${CA_DIR}
+      - ./certs:/opt/masqued/certs
+      - ./ca:/opt/masqued/ca
     command: /run.sh

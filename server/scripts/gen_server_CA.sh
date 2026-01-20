@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-source /opt/masque-server/scripts/helper.sh
+source /opt/masqued/scripts/helper.sh
 
 POSITIONAL_ARGS=()
 FORCEUPDATE=0
@@ -76,7 +76,7 @@ if [[ ! -f $WORK_DIR/private/ca.key.pem ]] || [[ $FORCEUPDATE -eq 1 ]]; then
     mkdir -p ./private ./certs ./crl ./newcerts
     touch ./index.txt ./serial
     openssl genrsa -out private/ca.key.pem 4096
-    openssl req -config /opt/masque-server/config/ca-req.conf -key private/ca.key.pem -new -x509 \
+    openssl req -config /opt/masqued/extras/ca-req.conf -key private/ca.key.pem -new -x509 \
         -sha256 -extensions v3_ca -out certs/ca.cert.pem \
         -subj "/C=$C/ST=$ST/L=$L/O=$O/OU=$OU/CN=$CN" \
         -days 3650

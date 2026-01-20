@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 source /opt/masqued/scripts/helper.sh
-source /opt/masqued/config/daemon.conf
+source /opt/masqued/masqued.conf
 function log {
     level=$(echo $1 | tr '[a-z]' '[A-Z]')
     msg=$2
@@ -15,16 +15,16 @@ chmod +x $SCRIPT_DIR/*
 
 
 
-echo 'alias genServerCA='"'"'bash -c '$SCRIPT_DIR'/gen_server_CA.sh'"'" >>/root/.bashrc
-echo 'alias genServerCert='"'"'bash -c '$SCRIPT_DIR'/gen_server_cert.sh'"'" >>/root/.bashrc
-echo 'alias genClientCA='"'"'bash -c '$SCRIPT_DIR'/gen_client_CA.sh'"'" >>/root/.bashrc
-echo 'alias genClientCert='"'"'bash -c '$SCRIPT_DIR'/gen_client_cert.sh'"'" >>/root/.bashrc
+ln -s $SCRIPT_DIR/gen_server_CA.sh /usr/sbin/genServerCA
+ln -s $SCRIPT_DIR/gen_client_CA.sh /usr/sbin/genClientCA
+ln -s $SCRIPT_DIR/gen_server_cert.sh /usr/sbin/genServerCert
+ln -s $SCRIPT_DIR/gen_client_cert.sh /usr/sbin/genClientCert
 
-$SCRIPT_DIR/gen_server_CA.sh
-$SCRIPT_DIR/gen_server_cert.sh -f --dns-list ${SAN_DNS_LIST} --ip-list ${SAN_IP_LIST}
-$SCRIPT_DIR/gen_client_CA.sh
+genServerCA
+genServerCert -f --dns-list ${SAN_DNS_LIST} --ip-list ${SAN_IP_LIST}
+genClientCA
 
 log "info" "Running masque daemon"
-chmod +x $BASE/masqued
-ln -s $BASE/masqued /usr/sbin/masqued
+chmod +x $BASE/bin
+ln -s $BASE/bin /usr/sbin/masqued
 masqued
