@@ -12,4 +12,5 @@ services:
     volumes:
       - ./certs:/opt/masqued/certs
       - ./ca:/opt/masqued/ca
+      - ./masqued.conf:/opt/masqued/masqued.conf
     command: /run.sh

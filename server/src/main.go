@@ -195,17 +195,19 @@ func createTunTapDevice(ctx context.Context, virtIp string, virtPrefixLen int, m
 	if err := netlink.LinkSetUp(link); err != nil {
 		return nil, fmt.Errorf("failed to bring up TUN interface: %w", err)
 	}
-    addr, err := netlink.ParseAddr(virtIp + "/" + string(virtPrefixLen))
+    addr, err := netlink.ParseAddr(virtIp + "/" + strconv.Itoa(virtPrefixLen))
     if err != nil {
         return nil, fmt.Errorf("Failed to assign IP to %v: %v", dev.Name(), err)
     }
     netlink.AddrAdd(link, addr)
     netlink.LinkSetMTU(link, mtu)
-    prefixAddr, err := netip.ParseAddr(virtIp)
+    clientIp, clientSubnet, err := net.ParseCIDR(os.Getenv("CLIENT_CIDR"))
+    prefixAddr, err := netip.ParseAddr(clientIp.String())
     if err != nil {
         return  nil, fmt.Errorf("Failed to parse address: %w", err)
     }
-    prefix := netip.PrefixFrom(prefixAddr, virtPrefixLen)
+    bitmask, _ := clientSubnet.Mask.Size()
+    prefix := netip.PrefixFrom(prefixAddr, bitmask)
     route := &netlink.Route{ LinkIndex: link.Attrs().Index, Dst: PrefixToIPNet(prefix) }
 	if err := netlink.RouteAdd(route); err != nil {
 		return nil, fmt.Errorf("Failed to add route: %w", err)
