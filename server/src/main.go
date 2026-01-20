@@ -28,15 +28,12 @@ import (
 	"github.com/songgao/water"
 	"github.com/vishvananda/netlink"
 	"github.com/yosida95/uritemplate/v3"
-
-    "gorm.io/driver/sqlite"
-    "gorm.io/gorm"
 )
 
 
 var serverSocketSend int
 var tunTapDevice *water.Interface
-var db *gorm.DB
+var db *DB
 var mu sync.RWMutex
 var ipToTunChan map[string](chan []byte)
 
@@ -145,16 +142,13 @@ func Bootstrap(ctx *context.Context) {
         LogFatal(fmt.Sprintf("Failed bootstrap scripts: %v", err))
     }
 
-    db, err := gorm.Open(sqlite.Open(DB_PATH), &gorm.Config{})
-    if err != nil {
-        LogFatal("Failed to connect database")
-    }
+    db := GetDBInstance()
     // Migrate the schema
-    db.AutoMigrate(&Client{})
-    db.AutoMigrate(&Role{})
-    db.AutoMigrate(&Resource{})
-    db.AutoMigrate(&IP{})
-    db.AutoMigrate(&DHCP{})
+    db.conn.AutoMigrate(&Client{})
+    db.conn.AutoMigrate(&Role{})
+    db.conn.AutoMigrate(&Resource{})
+    db.conn.AutoMigrate(&IP{})
+    db.conn.AutoMigrate(&DHCP{})
 }
 
 func PostUp(ctx *context.Context) {
@@ -337,10 +331,10 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
         }
     }()
 	mux.HandleFunc("/vpn", func(w http.ResponseWriter, r *http.Request) {
-		LogDebug(fmt.Sprintf("Handle new HTTP client"))
-        clientId := (*r.TLS.PeerCertificates[0]).Subject.CommonName
+        clientId := r.TLS.PeerCertificates[0].Subject.CommonName
+		LogDebug(fmt.Sprintf("Handle new HTTP client %v", clientId))
         conCtx := context.WithValue(ctx, "clientId", clientId)
-        GetClientResources(&conCtx, db, clientId)
+        GetClientResources(&conCtx, db.conn, clientId)
 		req, err := connectip.ParseRequest(r, template)
 		if err != nil {
 			var perr *connectip.RequestParseError
@@ -358,7 +352,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 			return
 		}
 
-		if err := handleConn(conCtx, make(chan []byte), conn, ipProtocol); err != nil {
+		if err := handleConn(&conCtx, make(chan []byte), conn, ipProtocol); err != nil {
 			LogError(fmt.Sprintf("failed to handle connection: %v", err))
 		}
 	})
@@ -375,8 +369,8 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 	return nil
 }
 
-func handleConn(contxt context.Context, tunChan chan []byte,  conn *connectip.Conn, ipProtocol uint8) error {
-	ctx, cancel := context.WithTimeout(contxt, 5*time.Second)
+func handleConn(contxt *context.Context, tunChan chan []byte,  conn *connectip.Conn, ipProtocol uint8) error {
+	ctx, cancel := context.WithTimeout(*contxt, 5*time.Second)
 	defer cancel()
     LogDebug("Start connectip flow")
     // Get the next unassigned address
@@ -385,7 +379,7 @@ func handleConn(contxt context.Context, tunChan chan []byte,  conn *connectip.Co
     // We can assign any subnet size here but I'm using /32 for simplicity
     // I may want to go back to this hardcoded number when I see issues for site-to-side VPN
     clientId := ctx.Value("clientId").(string)
-    peerAddr, perr := AssignIPToClient(&ctx, db, clientId)
+    peerAddr, perr := AssignIPToClient(&ctx, db.conn, clientId)
     if perr != nil {
         return fmt.Errorf("Failed to get available IP: %w", perr)
     }
@@ -401,7 +395,7 @@ func handleConn(contxt context.Context, tunChan chan []byte,  conn *connectip.Co
     mu.Lock()
     ipToTunChan[peerAddr] = tunChan
     mu.Unlock()
-    clientResources, cerr := GetClientResources(&ctx, db, clientId)
+    clientResources, cerr := GetClientResources(&ctx, db.conn, clientId)
     if cerr != nil {
         return cerr
     }

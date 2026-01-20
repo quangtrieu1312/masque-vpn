@@ -1,6 +1,7 @@
 package main
 
 import (
+    "fmt"
 	"context"
 	"gorm.io/gorm"
 )
@@ -50,15 +51,21 @@ func GetClientById(ctx *context.Context, db *gorm.DB, id string) (*Client, error
 }
 
 func GetClientResources(ctx *context.Context, db *gorm.DB, id string) ([]*Resource, error) {
+    LogDebug("0")
+    LogDebug(fmt.Sprintf("%v", ctx))
+    LogDebug(fmt.Sprintf("%v", db))
     client, err := gorm.G[*Client](db).Where("id = ?", id).First(*ctx)
     if err != nil {
         return nil, err
     }
+    LogDebug("1")
     roles := client.Roles
+    LogDebug("2")
     ret := []*Resource{}
     for i := 0; i < len(roles); i++ {
         ret = append(ret, roles[i].Resources...)
     }
+    LogDebug("3")
     return ret, nil
 }
 
