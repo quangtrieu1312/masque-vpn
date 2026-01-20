@@ -334,7 +334,6 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
         clientId := r.TLS.PeerCertificates[0].Subject.CommonName
 		LogDebug(fmt.Sprintf("Handle new HTTP client %v", clientId))
         conCtx := context.WithValue(ctx, "clientId", clientId)
-        GetClientResources(&conCtx, clientId)
 		req, err := connectip.ParseRequest(r, template)
 		if err != nil {
 			var perr *connectip.RequestParseError
@@ -379,7 +378,7 @@ func handleConn(contxt *context.Context, tunChan chan []byte,  conn *connectip.C
     // We can assign any subnet size here but I'm using /32 for simplicity
     // I may want to go back to this hardcoded number when I see issues for site-to-side VPN
     clientId := ctx.Value("clientId").(string)
-    peerAddr, perr := AssignIPToClient(&ctx, db.conn, clientId)
+    peerAddr, perr := AssignIPToClient(&ctx, clientId)
     if perr != nil {
         return fmt.Errorf("Failed to get available IP: %w", perr)
     }
