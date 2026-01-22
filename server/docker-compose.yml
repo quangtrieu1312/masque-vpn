@@ -1,5 +1,5 @@
 services:
-  masque-server:
+  masqued:
     build: .
     cap_add:
       - NET_ADMIN
@@ -9,8 +9,33 @@ services:
       - /dev/net/tun:/dev/net/tun
     ports:
       - 443:443/udp
+    networks:
+      - db
     volumes:
       - ./certs:/opt/masqued/certs
       - ./ca:/opt/masqued/ca
       - ./masqued.conf:/opt/masqued/masqued.conf
     command: /run.sh
+  postgres:
+    image: postgres
+    environment:
+      POSTGRES_USER: masqued
+      POSTGRES_PASSWORD: masqued
+      PGDATA: /data/postgres
+      POSTGRES_DB: masqued
+    volumes:
+      - db:/data/postgres
+    networks:
+      - db
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d postgres" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+networks:
+  db:
+    driver: bridge
+
+volumes:
+  db:
