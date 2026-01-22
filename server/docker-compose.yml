@@ -20,7 +20,7 @@ services:
     image: postgres
     environment:
       - POSTGRES_USER=masqued
-      - POSTGRES_PASSWORD= masqued
+      - POSTGRES_PASSWORD=masqued
       - PGDATA=/data/postgres
       - POSTGRES_DB=masqued
     volumes:
