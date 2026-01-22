@@ -19,10 +19,10 @@ services:
   postgres:
     image: postgres
     environment:
-      - POSTGRES_USER= masqued
+      - POSTGRES_USER=masqued
       - POSTGRES_PASSWORD= masqued
-      - PGDATA= /data/postgres
-      - POSTGRES_DB= masqued
+      - PGDATA=/data/postgres
+      - POSTGRES_DB=masqued
     volumes:
       - db:/data/postgres
     networks:
