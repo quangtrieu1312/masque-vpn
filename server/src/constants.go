@@ -5,7 +5,6 @@ const CA_DIR = WORK_DIR + "/ca"
 const CERT_DIR = WORK_DIR + "/certs"
 const SCRIPT_DIR = WORK_DIR + "/scripts"
 const CONF_PATH = WORK_DIR + "/masqued.conf"
-const DB_PATH = WORK_DIR + "/masqued.db"
 
 const SERVER_CA_DIR = CA_DIR + "/server"
 const SERVER_CA_PATH = CA_DIR + "/server/certs/ca.cert.pem"

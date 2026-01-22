@@ -3,7 +3,7 @@ package main
 import (
     "sync"
 	"gorm.io/gorm"
-    "gorm.io/driver/sqlite"
+    "gorm.io/driver/postgres"
 )
 
 var dbLock = &sync.Mutex{}
@@ -19,7 +19,8 @@ func GetDBInstance() *DB {
         lock.Lock()
         defer lock.Unlock()
         if dbInstance == nil {
-            dbConn, err:= gorm.Open(sqlite.Open(DB_PATH), &gorm.Config{})
+            dsn := "host=postgres user=masqued password=maqued dbname=masqued port=5432 sslmode=disable"
+            dbConn, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
             if err != nil {
                 LogFatal("Cannot connect to DB")
             }
