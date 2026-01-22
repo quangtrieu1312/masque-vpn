@@ -7,14 +7,14 @@ import (
 
 type Client struct {
     gorm.Model
-    Name string
+    Name string `gorm:"primaryKey"`
     LastSeen uint64
     Roles []*Role `gorm:"many2many:clients_roles"`
 }
 
 type IP struct {
     gorm.Model
-    ClientID string
+    ClientName string
     Client Client
     Value string `gorm:"primaryKey"`
 }

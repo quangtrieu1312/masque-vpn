@@ -31,7 +31,7 @@ import (
 
 func parseConfig(ctx *context.Context) {
     var configPath string
-    flag.StringVar(&configPath,"f", "/opt/masque/config/masque.conf", "Path to config file")
+    flag.StringVar(&configPath,"f", "/opt/masque/masque.conf", "Path to config file")
     file, err := os.Open(configPath)
     if err != nil {
         log.Fatalf("Failed to open config file %v: %v", configPath, err)
