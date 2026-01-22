@@ -39,21 +39,21 @@ type DHCP struct {
     NextAvailableIP string
 }
 
-func GetAllClients(ctx *context.Context) ([]*Client, error) {
-    db := GetDBInstance().conn
-    clients, err := gorm.G[*Client](db).Find(*ctx)
+func GetAllClients(ctx context.Context) ([]*Client, error) {
+    db := GetDBInstance(ctx).conn
+    clients, err := gorm.G[*Client](db).Find(ctx)
     return clients, err
 }
 
-func GetClientById(ctx *context.Context, id string) (*Client, error) {
-    db := GetDBInstance().conn
-    client, err := gorm.G[*Client](db).Where("id = ?", id).First(*ctx)
+func GetClientById(ctx context.Context, id string) (*Client, error) {
+    db := GetDBInstance(ctx).conn
+    client, err := gorm.G[*Client](db).Where("id = ?", id).First(ctx)
     return client, err
 }
 
-func GetClientResources(ctx *context.Context, id string) ([]*Resource, error) {
-    db := GetDBInstance().conn
-    client, err := gorm.G[*Client](db).Where("id = ?", id).First(*ctx)
+func GetClientResources(ctx context.Context, id string) ([]*Resource, error) {
+    db := GetDBInstance(ctx).conn
+    client, err := gorm.G[*Client](db).Where("id = ?", id).First(ctx)
     if err != nil {
         return nil, err
     }
@@ -66,26 +66,26 @@ func GetClientResources(ctx *context.Context, id string) ([]*Resource, error) {
     return ret, nil
 }
 
-func GetAllRoles(ctx *context.Context) ([]*Role, error) {
-    db := GetDBInstance().conn
-    roles, err := gorm.G[*Role](db).Find(*ctx)
+func GetAllRoles(ctx context.Context) ([]*Role, error) {
+    db := GetDBInstance(ctx).conn
+    roles, err := gorm.G[*Role](db).Find(ctx)
     return roles, err
 }
 
-func GetAllResources(ctx *context.Context) ([]*Resource, error) {
-    db := GetDBInstance().conn
-    resources, err := gorm.G[*Resource](db).Find(*ctx)
+func GetAllResources(ctx context.Context) ([]*Resource, error) {
+    db := GetDBInstance(ctx).conn
+    resources, err := gorm.G[*Resource](db).Find(ctx)
     return resources, err
 }
 
-func AssignRolesToClient(ctx *context.Context, roleNames []string, clientId string) (bool, error) {
-    db := GetDBInstance().conn
+func AssignRolesToClient(ctx context.Context, roleNames []string, clientId string) (bool, error) {
+    db := GetDBInstance(ctx).conn
     err := db.Transaction(func(tx *gorm.DB) error {
-        roles, rerr := gorm.G[*Role](tx).Where("name in ?", roleNames).Find(*ctx)
+        roles, rerr := gorm.G[*Role](tx).Where("name in ?", roleNames).Find(ctx)
         if rerr != nil {
             return rerr
         }
-        _, e := gorm.G[*Client](db).Where("id = ?", clientId).Update(*ctx, "roles", roles)
+        _, e := gorm.G[*Client](db).Where("id = ?", clientId).Update(ctx, "roles", roles)
 
         return e
     })
@@ -95,14 +95,14 @@ func AssignRolesToClient(ctx *context.Context, roleNames []string, clientId stri
     return true, nil
 }
 
-func AssignResourcesToRole(ctx *context.Context, resourceNames []string, roleName string) (bool, error) {
-    db := GetDBInstance().conn
+func AssignResourcesToRole(ctx context.Context, resourceNames []string, roleName string) (bool, error) {
+    db := GetDBInstance(ctx).conn
     err := db.Transaction(func(tx *gorm.DB) error {
-        resources, rerr := gorm.G[*Role](tx).Where("name in ?", resourceNames).Find(*ctx)
+        resources, rerr := gorm.G[*Role](tx).Where("name in ?", resourceNames).Find(ctx)
         if rerr != nil {
             return rerr
         }
-        _, e := gorm.G[*Role](db).Where("name = ?", roleName).Update(*ctx, "resources", resources)
+        _, e := gorm.G[*Role](db).Where("name = ?", roleName).Update(ctx, "resources", resources)
 
         return e
     })
@@ -112,8 +112,8 @@ func AssignResourcesToRole(ctx *context.Context, resourceNames []string, roleNam
     return true, nil
 }
 
-func CreateClients(ctx *context.Context, clientNames []string) (bool, error) {
-    db := GetDBInstance().conn
+func CreateClients(ctx context.Context, clientNames []string) (bool, error) {
+    db := GetDBInstance(ctx).conn
     clients := []*Client{}
     for i := 0; i < len(clientNames); i++ {
         roles := []*Role{}
@@ -129,8 +129,8 @@ func CreateClients(ctx *context.Context, clientNames []string) (bool, error) {
     return true, nil
 }
 
-func CreateRoles(ctx *context.Context, roles []*Role) (bool, error) {
-    db := GetDBInstance().conn
+func CreateRoles(ctx context.Context, roles []*Role) (bool, error) {
+    db := GetDBInstance(ctx).conn
     result := db.Create(roles)
     if result.Error != nil {
         return false, result.Error
@@ -138,8 +138,8 @@ func CreateRoles(ctx *context.Context, roles []*Role) (bool, error) {
     return true, nil
 }
 
-func CreateResources(ctx *context.Context, resources []*Resource) (bool, error) {
-    db := GetDBInstance().conn
+func CreateResources(ctx context.Context, resources []*Resource) (bool, error) {
+    db := GetDBInstance(ctx).conn
     result := db.Create(resources)
     if result.Error != nil {
         return false, result.Error
@@ -147,41 +147,41 @@ func CreateResources(ctx *context.Context, resources []*Resource) (bool, error) 
     return true, nil
 }
 
-func DeleteClients(ctx *context.Context, clientIds []string) (bool, error) {
-    db := GetDBInstance().conn
-    _, err := gorm.G[*Client](db).Where("id IN ?", clientIds).Delete(*ctx)
+func DeleteClients(ctx context.Context, clientIds []string) (bool, error) {
+    db := GetDBInstance(ctx).conn
+    _, err := gorm.G[*Client](db).Where("id IN ?", clientIds).Delete(ctx)
     if err != nil {
         return false, err
     }
     return true, nil
 }
 
-func DeleteRoles(ctx *context.Context, roleNames []string) (bool, error) {
-    db := GetDBInstance().conn
-    _, err := gorm.G[*Role](db).Where("name IN ?", roleNames).Delete(*ctx)
+func DeleteRoles(ctx context.Context, roleNames []string) (bool, error) {
+    db := GetDBInstance(ctx).conn
+    _, err := gorm.G[*Role](db).Where("name IN ?", roleNames).Delete(ctx)
     if err != nil {
         return false, err
     }
     return true, nil
 }
 
-func DeleteResources(ctx *context.Context, resourceNames []string) (bool, error) {
-    db := GetDBInstance().conn
-    _, err := gorm.G[*Resource](db).Where("name IN ?", resourceNames).Delete(*ctx)
+func DeleteResources(ctx context.Context, resourceNames []string) (bool, error) {
+    db := GetDBInstance(ctx).conn
+    _, err := gorm.G[*Resource](db).Where("name IN ?", resourceNames).Delete(ctx)
     if err != nil {
         return false, err
     }
     return true, nil
 }
 
-func GetDHCP(ctx *context.Context) (*DHCP, error) {
-    db := GetDBInstance().conn
-    conf, err := gorm.G[*DHCP](db).First(*ctx)
+func GetDHCP(ctx context.Context) (*DHCP, error) {
+    db := GetDBInstance(ctx).conn
+    conf, err := gorm.G[*DHCP](db).First(ctx)
     return conf, err
 }
 
-func CreateDHCP(ctx *context.Context, newClientCIDR string) (bool, error) {
-    db := GetDBInstance().conn
+func CreateDHCP(ctx context.Context, newClientCIDR string) (bool, error) {
+    db := GetDBInstance(ctx).conn
     firstIP, err := FirstIP(newClientCIDR)
     if err != nil {
         return false, err
@@ -193,21 +193,21 @@ func CreateDHCP(ctx *context.Context, newClientCIDR string) (bool, error) {
     return true, nil
 }
 
-func AssignIPToClient(ctx *context.Context, clientId string) (string, error) {
-    db := GetDBInstance().conn
+func AssignIPToClient(ctx context.Context, clientId string) (string, error) {
+    db := GetDBInstance(ctx).conn
     assignedIP := ""
     err := db.Transaction(func(tx *gorm.DB) error {
-        oldIp, oerr := gorm.G[*IP](db).Where("client_id = ?", clientId).First(*ctx)
+        oldIp, oerr := gorm.G[*IP](db).Where("client_id = ?", clientId).First(ctx)
         if oerr == nil && len(oldIp.Value) > 0 {
             assignedIP = oldIp.Value
             return nil
         }
-        dhcp, err := gorm.G[*DHCP](tx).First(*ctx)
+        dhcp, err := gorm.G[*DHCP](tx).First(ctx)
         if err != nil {
             return err
         }
         assignedIP = dhcp.NextAvailableIP
-        _, e := gorm.G[*IP](db).Where("client_id = ?", clientId).Update(*ctx, "value", assignedIP)
+        _, e := gorm.G[*IP](db).Where("client_id = ?", clientId).Update(ctx, "value", assignedIP)
         if e != nil {
             return e
         }
@@ -216,7 +216,7 @@ func AssignIPToClient(ctx *context.Context, clientId string) (string, error) {
             return e
         }
 
-        _, er := gorm.G[*DHCP](db).Update(*ctx, "value", nextIP)
+        _, er := gorm.G[*DHCP](db).Update(ctx, "value", nextIP)
 
         return er
     })

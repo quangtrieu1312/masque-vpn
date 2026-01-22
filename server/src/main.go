@@ -45,12 +45,12 @@ func main() {
         syscall.SIGINT,
         syscall.SIGTERM,
         syscall.SIGQUIT)
-    go func(ctxt *context.Context) {
+    go func(ctxt context.Context) {
         <-sigc
         GracefullyShutDown(ctxt)
-    }(&ctx)
+    }(ctx)
 
-    ParseConfig(&ctx)
+    ParseConfig(ctx)
     logLevel := ctx.Value("LOG_LEVEL").(string)
     GetLoggerInstance()
     UpdateLogLevelName(logLevel)
@@ -116,7 +116,7 @@ func main() {
 	serverSocketSend = fdSnd
 
 	upChan := make(chan bool)
-    go func(ctxt *context.Context) {
+    go func(ctxt context.Context) {
         for {
             isRunning := <- upChan
             if (isRunning) {
@@ -125,8 +125,8 @@ func main() {
                 GracefullyShutDown(ctxt)
             }
         }
-    }(&ctx)
-    Bootstrap(&ctx)
+    }(ctx)
+    Bootstrap(ctx)
 	if err := run(ctx, upChan, bindTo, uint8(ipProtocol)); err != nil {
 		LogFatal(fmt.Sprintf("%v",err))
 	}
@@ -134,7 +134,7 @@ func main() {
 }
 
 
-func Bootstrap(ctx *context.Context) {
+func Bootstrap(ctx context.Context) {
     LogInfo("Server in bootstrap phase")
     cmd := exec.Command("/bin/bash", "-c", SCRIPT_DIR + "/bootstrap.sh")
     _, err := cmd.Output()
@@ -142,7 +142,7 @@ func Bootstrap(ctx *context.Context) {
         LogFatal(fmt.Sprintf("Failed bootstrap scripts: %v", err))
     }
 
-    db := GetDBInstance()
+    db := GetDBInstance(ctx)
     // Migrate the schema
     db.conn.AutoMigrate(&Client{})
     db.conn.AutoMigrate(&Role{})
@@ -151,7 +151,7 @@ func Bootstrap(ctx *context.Context) {
     db.conn.AutoMigrate(&DHCP{})
 }
 
-func PostUp(ctx *context.Context) {
+func PostUp(ctx context.Context) {
     LogInfo("Server in post-up phase")
     cmd := exec.Command("/bin/bash", "-c", SCRIPT_DIR + "/postup.sh")
     _, err := cmd.Output()
@@ -169,10 +169,10 @@ func PreDown() {
     }
 }
 
-func GracefullyShutDown(ctx *context.Context) {
+func GracefullyShutDown(ctx context.Context) {
     LogInfo("Shutting down")
     PreDown()
-    (*ctx).Done()
+    ctx.Done()
 }
 
 func createTunTapDevice(ctx context.Context, virtIp string, virtPrefixLen int, mtu int) (*water.Interface, error) {
@@ -378,7 +378,7 @@ func handleConn(contxt *context.Context, tunChan chan []byte,  conn *connectip.C
     // We can assign any subnet size here but I'm using /32 for simplicity
     // I may want to go back to this hardcoded number when I see issues for site-to-side VPN
     clientId := ctx.Value("clientId").(string)
-    peerAddr, perr := AssignIPToClient(&ctx, clientId)
+    peerAddr, perr := AssignIPToClient(ctx, clientId)
     if perr != nil {
         return fmt.Errorf("Failed to get available IP: %w", perr)
     }
@@ -394,7 +394,7 @@ func handleConn(contxt *context.Context, tunChan chan []byte,  conn *connectip.C
     mu.Lock()
     ipToTunChan[peerAddr] = tunChan
     mu.Unlock()
-    clientResources, cerr := GetClientResources(&ctx, clientId)
+    clientResources, cerr := GetClientResources(ctx, clientId)
     if cerr != nil {
         return cerr
     }

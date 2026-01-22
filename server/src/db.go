@@ -1,7 +1,9 @@
 package main
 
 import (
+    "fmt"
     "sync"
+    "context"
 	"gorm.io/gorm"
     "gorm.io/driver/postgres"
 )
@@ -14,12 +16,17 @@ type DB struct {
 
 var dbInstance *DB
 
-func GetDBInstance() *DB {
+func GetDBInstance(ctx context.Context) *DB {
     if dbInstance == nil {
         lock.Lock()
         defer lock.Unlock()
         if dbInstance == nil {
-            dsn := "host=postgres user=masqued password=maqued dbname=masqued port=5432 sslmode=disable"
+            host := ctx.Value("DB_HOST").(string)
+            port := ctx.Value("DB_PORT").(string)
+            name := ctx.Value("DB_NAME").(string)
+            username := ctx.Value("DB_USERNAME").(string)
+            password := ctx.Value("DB_PASSWORD").(string)
+            dsn := fmt.Sprintf("host=%v port=%v user=%v password=%v dbname=%v sslmode=disable", host, port, username, password, name)
             dbConn, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
             if err != nil {
                 LogFatal("Cannot connect to DB")
