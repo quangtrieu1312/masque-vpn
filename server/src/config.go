@@ -9,7 +9,7 @@ import (
 	"os"
 )
 
-func ParseConfig(ctx context.Context) {
+func ParseConfig(ctx *context.Context) {
     var configPath string
     flag.StringVar(&configPath, "f", "/opt/masqued/masqued.conf", "Path to config file")
     file, err := os.Open(configPath)
@@ -44,6 +44,6 @@ func ParseConfig(ctx context.Context) {
         if (k == "") {
             log.Fatalf("Invalid config format")
         }
-        ctx = context.WithValue(ctx, k, v)
+        *ctx = context.WithValue(*ctx, k, v)
     }
 }

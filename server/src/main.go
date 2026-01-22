@@ -50,7 +50,7 @@ func main() {
         GracefullyShutDown(ctxt)
     }(ctx)
 
-    ParseConfig(ctx)
+    ParseConfig(&ctx)
     logLevel := ctx.Value("LOG_LEVEL").(string)
     GetLoggerInstance()
     UpdateLogLevelName(logLevel)
