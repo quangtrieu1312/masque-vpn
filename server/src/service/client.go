@@ -1,37 +1,35 @@
-package main
+package service
 
 import (
 	"context"
-	"gorm.io/gorm"
+    _ "github.com/lib/pq"
+    "github.com/quangtrieu1312/masque-vpn/server/domain"
+    "github.com/quangtrieu1312/masque-vpn/server/repository"
 )
 
 type Client struct {
-    gorm.Model
-    Name string `gorm:"primaryKey"`
+    Name string
     LastSeen uint64
-    Roles []*Role `gorm:"many2many:clients_roles"`
+    Roles []*Role
 }
 
 type IP struct {
-    gorm.Model
     ClientName string
     Client Client
-    Value string `gorm:"primaryKey"`
+    Value string
 }
 
 type Role struct {
-    gorm.Model
-    Name string `gorm:"primaryKey"`
-    Clients []*Client `gorm:"many2many:clients_roles"`
-    Resources []*Resource `gorm:"many2many:roles_resources"`
+    Name string
+    Clients []*Client
+    Resources []*Resource
 }
 
 type Resource struct {
-    gorm.Model
-    Name string `gorm:"primaryKey"`
+    Name string
     Value string
-    Clients []*Client `gorm:"many2many:clients_resources"`
-    Roles []*Role `gorm:"many2many:roles_resources"`
+    Clients []*Client
+    Roles []*Role
 }
 
 type DHCP struct {

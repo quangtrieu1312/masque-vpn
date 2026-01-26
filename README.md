@@ -60,8 +60,8 @@ Step 5: Build the binary `bash client/build.sh`
 
 Step 6: Run the binary `sudo client/build/client`
 
-### MacOS
-WIP
-
-### Windows
-WIP
+NOTE:
+If the postgres service does not respect environment variables, then run this command to manually create a user
+`CREATE USER [name] WITH PASSWORD '[pass]' CREATEDB;`
+or update the existing user pass with
+`\password`

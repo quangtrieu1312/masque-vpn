@@ -1,4 +1,4 @@
-package main
+package logger
 
 import (
     "log"
@@ -54,82 +54,75 @@ type logger struct {
     logPath string
 }
 
-var loggerInstance *logger
+var loggerInstance *logger = &logger{INFO, "log"}
 
 func GetLoggerInstance() *logger {
-    if loggerInstance == nil {
-        lock.Lock()
-        defer lock.Unlock()
-        if loggerInstance == nil {
-            loggerInstance = &logger{INFO, "masque.log"}
-        }
-    }
     return loggerInstance
 }
 
 func UpdateLoggerInstance(level LogLevel, logPath string) {
-    GetLoggerInstance().level = level
-    GetLoggerInstance().logPath = logPath
+    loggerInstance.level = level
+    loggerInstance.logPath = logPath
 }
 
 func UpdateLogLevel(level LogLevel) {
-    GetLoggerInstance().level = level
+    loggerInstance.level = level
 }
 
 func UpdateLogLevelName(levelName string) {
     level := ConvertStringToLogLevel(levelName)
-    GetLoggerInstance().level = level
+    loggerInstance.level = level
 }
 
 func UpdateLogPath(logPath string) {
-    GetLoggerInstance().logPath = logPath
+    loggerInstance.logPath = logPath
 }
 
 func GetLogLevel() LogLevel {
-    return GetLoggerInstance().level
+    return loggerInstance.level
 }
 
 func GetLogPath() string {
-    return GetLoggerInstance().logPath
+    return loggerInstance.logPath
 }
 
 func (level LogLevel) string() string {
     return levelName[level]
 }
 
-func LogFatal(msg string) {
-    if GetLogLevel() >= FATAL {
+func Fatal(msg string) {
+    if loggerInstance.level >= FATAL {
         log.Printf("[%v]: %v", FATAL.string(), msg)
         os.Exit(1)
     }
 }
 
-func LogError(msg string) {
-    if GetLogLevel() >= ERROR {
+func Error(msg string) {
+    if loggerInstance.level >= ERROR {
         log.Printf("[%v]: %v", ERROR.string(), msg)
     }
 }
 
-func LogWarn(msg string) {
-    if GetLogLevel() >= WARN {
+func Warn(msg string) {
+    if loggerInstance.level >= WARN {
         log.Printf("[%v]: %v", WARN.string(), msg)
     }
 }
 
-func LogInfo(msg string) {
-    if GetLogLevel() >= INFO {
+func Info(msg string) {
+    if loggerInstance.level >= INFO {
         log.Printf("[%v]: %v", INFO.string(), msg)
     }
 }
 
-func LogDebug(msg string) {
-    if GetLogLevel() >= DEBUG {
+func Debug(msg string) {
+    if loggerInstance.level >= DEBUG {
         log.Printf("[%v]: %v", DEBUG.string(), msg)
     }
 }
 
-func LogTrace(msg string) {
-    if GetLogLevel() >= TRACE {
+func Trace(msg string) {
+    if loggerInstance.level >= TRACE {
         log.Printf("[%v]: %v", TRACE.string(), msg)
     }
 }

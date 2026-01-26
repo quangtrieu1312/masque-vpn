@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 SCRIPT_DIR=$(realpath $(dirname $0))
-for script in "$SCRIPT_DIR"/postup_*; do
+ls "$SCRIPT_DIR" | grep -E '^[0-9]+_.*' | sort | while read script; do
     chmod +x "$script"
     bash -c "$script"
 done

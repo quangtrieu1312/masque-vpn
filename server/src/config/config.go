@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
     "context"
@@ -9,7 +9,7 @@ import (
 	"os"
 )
 
-func ParseConfig(ctx *context.Context) {
+func Load(ctx *context.Context) {
     var configPath string
     flag.StringVar(&configPath, "f", "/opt/masqued/masqued.conf", "Path to config file")
     file, err := os.Open(configPath)
