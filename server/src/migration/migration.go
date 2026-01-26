@@ -20,9 +20,6 @@ type Migration interface {
 func GenerateMigrationList() []Migration {
     migrations := []Migration{}
     migrations = append(migrations, GetMigration1())
-    migrations = append(migrations, GetMigration2())
-    migrations = append(migrations, GetMigration3())
-    migrations = append(migrations, GetMigration4())
     return migrations
 }
 

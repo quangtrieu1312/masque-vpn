@@ -1,6 +1,6 @@
 package domain
 
 type DHCP struct {
-    ClientCIDR string
-    NextAvailableIP string
+    FirstIP int64
+    LastIP int64
 }

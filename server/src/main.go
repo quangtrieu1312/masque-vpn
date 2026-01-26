@@ -28,11 +28,13 @@ import (
 	"github.com/songgao/water"
 	"github.com/vishvananda/netlink"
 	"github.com/yosida95/uritemplate/v3"
-    
+
+    "github.com/quangtrieu1312/masque-vpn/server/utility"
+    "github.com/quangtrieu1312/masque-vpn/server/db"
     "github.com/quangtrieu1312/masque-vpn/server/config"
     "github.com/quangtrieu1312/masque-vpn/server/logger"
     "github.com/quangtrieu1312/masque-vpn/server/migration"
-    "github.com/quangtrieu1312/masque-vpn/server/db"
+    "github.com/quangtrieu1312/masque-vpn/server/service"
 )
 
 
@@ -57,7 +59,7 @@ func main() {
 
     config.Load(&ctx)
     logLevel := ctx.Value("LOG_LEVEL").(string)
-    logger.Updatelogger.LevelName(logLevel)
+    logger.UpdateLogLevelName(logLevel)
     ifaceName := ctx.Value("WAN_INTERFACE").(string)
     bindAddr := netip.MustParseAddr(ctx.Value("BIND_ADDR").(string))
     listenPort, err := strconv.Atoi(ctx.Value("LISTEN_PORT").(string))
@@ -205,7 +207,7 @@ func createTunTapDevice(ctx context.Context, virtIp string, virtPrefixLen int, m
     if err != nil {
         return  nil, fmt.Errorf("Failed to parse prefix: %w", err)
     }
-    route := &netlink.Route{ LinkIndex: link.Attrs().Index, Dst: PrefixToIPNet(prefixAddr) }
+    route := &netlink.Route{ LinkIndex: link.Attrs().Index, Dst: utility.PrefixToIPNet(prefixAddr) }
 	if err := netlink.RouteAdd(route); err != nil {
 		return nil, fmt.Errorf("Failed to add route %v: %w", route, err)
 	}
@@ -378,7 +380,7 @@ func handleConn(contxt *context.Context, tunChan chan []byte,  conn *connectip.C
     // We can assign any subnet size here but I'm using /32 for simplicity
     // I may want to go back to this hardcoded number when I see issues for site-to-side VPN
     clientId := ctx.Value("clientId").(string)
-    peerAddr, perr := AssignIPToClient(ctx, clientId)
+    peerAddr, perr := service.AssignIPToClient(ctx, clientId)
     if perr != nil {
         return fmt.Errorf("Failed to get available IP: %w", perr)
     }
@@ -394,17 +396,17 @@ func handleConn(contxt *context.Context, tunChan chan []byte,  conn *connectip.C
     mu.Lock()
     ipToTunChan[peerAddr] = tunChan
     mu.Unlock()
-    clientResources, cerr := GetClientResources(ctx, clientId)
+    clientResources, cerr := service.GetClientResources(ctx, clientId)
     if cerr != nil {
         return cerr
     }
     clientRoutes := []connectip.IPRoute{}
-    for i := 0; i < len(clientResources); i++ {
-        r, e := netip.ParsePrefix(clientResources[i].Value)
+    for i := 0; i < len(*clientResources); i++ {
+        r, e := netip.ParsePrefix((*clientResources)[i].Value)
         if e != nil {
             continue
         }
-        connectipRoute := connectip.IPRoute{StartIP: r.Addr(), EndIP: LastIP(r), IPProtocol: ipProtocol}
+        connectipRoute := connectip.IPRoute{StartIP: r.Addr(), EndIP: utility.LastIP(r), IPProtocol: ipProtocol}
         clientRoutes = append(clientRoutes, connectipRoute)
     }
 	if err := conn.AdvertiseRoute(ctx, clientRoutes); err != nil {
@@ -421,7 +423,7 @@ func handleConn(contxt *context.Context, tunChan chan []byte,  conn *connectip.C
 				return
 			}
             logger.Trace(fmt.Sprintf("QUIC -> WAN: read %d bytes, response payload = %x", n, b[:n]))
-			if err := sendOnSocket(serverSocketSend, b[:n]); err != nil {
+			if err := utility.SendOnSocket(serverSocketSend, b[:n]); err != nil {
 				errChan <- fmt.Errorf("writing to server socket: %w", err)
 				return
 			}
@@ -438,7 +440,7 @@ func handleConn(contxt *context.Context, tunChan chan []byte,  conn *connectip.C
 				return
 			}
 			if len(icmp) > 0 {
-				if err := sendOnSocket(serverSocketSend, icmp); err != nil {
+				if err := utility.SendOnSocket(serverSocketSend, icmp); err != nil {
 					logger.Error(fmt.Sprintf("failed to send ICMP packet: %v", err))
                     return
 				}

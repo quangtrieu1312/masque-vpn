@@ -18,3 +18,5 @@ const SERVER_KEY_PATH = CERT_DIR + "/server/server.key"
 const CLIENT_CA_DIR = CA_DIR + "/client"
 const CLIENT_CA_PATH = CA_DIR + "/client/certs/ca.cert.pem"
 const CLIENT_CERT_DIR = CERT_DIR + "/client"
+
+const MANAGEMENT_SOCKET_PATH = "/var/run/masqued.sock"

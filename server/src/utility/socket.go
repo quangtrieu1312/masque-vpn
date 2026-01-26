@@ -1,6 +1,4 @@
-//go:build linux
-
-package main
+package utility
 
 import (
 	"errors"
@@ -11,8 +9,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func sendOnSocket(fd int, b []byte) error {
-	switch v := ipVersion(b); v {
+func SendOnSocket(fd int, b []byte) error {
+	switch v := IPVersion(b); v {
 	case 4:
 		if len(b) < ipv4.HeaderLen {
 			return errors.New("IPv4 packet too short")
@@ -36,6 +34,6 @@ func sendOnSocket(fd int, b []byte) error {
 	}
 }
 
-func ipVersion(b []byte) uint8 {
+func IPVersion(b []byte) uint8 {
 	return b[0] >> 4
 }

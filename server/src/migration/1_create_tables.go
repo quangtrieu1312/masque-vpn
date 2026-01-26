@@ -27,21 +27,66 @@ func (m Migration1) Run() int {
         logger.Fatal(fmt.Sprintf("cannot start DB transaction: %v", err))
     }
     //Create table for migration
-    db.GetConnection().Exec(`
+    tx.Exec(`
         CREATE TABLE IF NOT EXISTS migration (
             version integer NOT NULL,
             status integer NOT NULL DEFAULT 0,
             description text,
             PRIMARY KEY (version)
         )`)
-    db.GetConnection().Exec(`
+    tx.Exec(`
         INSERT INTO TABLE migration(version, status, description)
-        VALUES(?, ?, ?)
-        `, m.Version, Pending, m.Description)
+        VALUES($1, $2, $3)
+        ON CONFLICT (version)
+        DO NOTHING
+        `, m.Version, Succeeded, m.Description)
+
+    //Create table for domains
+    tx.Exec(`
+        CREATE TABLE IF NOT EXISTS clients (
+            name text NOT NULL,
+            last_seen integer NOT NULL DEFAULT 0,
+            ip text NOT NULL,
+            PRIMARY KEY (name)
+        )`)
+    tx.Exec(`
+        CREATE TABLE IF NOT EXISTS resources (
+            name text NOT NULL,
+            value text NOT NULL,
+            PRIMARY KEY (name)
+        )`)
+    tx.Exec(`
+        CREATE TABLE IF NOT EXISTS roles (
+            name text NOT NULL,
+            PRIMARY KEY (name)
+        )`)
+    tx.Exec(`
+        CREATE TABLE IF NOT EXISTS dhcp (
+            first_ip bigint NOT NULL UNIQUE,
+            last_ip bigint NOT NULL UNIQUE,
+        )`)
+    tx.Exec(`
+        CREATE TABLE IF NOT EXISTS clients_roles (
+            client_name text NOT NULL,
+            role_name text NOT NULL,
+            CONSTRAINT fk_client FOREIGN KEY (client_name)
+            REFERENCES clients(name) ON DELETE CASCADE,
+            CONSTRAINT fk_role FOREIGN KEY (role_name)
+            REFERENCES roles(name) ON DELETE CASCADE,
+        )`)
+    tx.Exec(`
+        CREATE TABLE IF NOT EXISTS roles_resources (
+            role_name text NOT NULL,
+            resource_name text NOT NULL,
+            CONSTRAINT fk_role FOREIGN KEY (role_name)
+            REFERENCES roles(name) ON DELETE CASCADE,
+            CONSTRAINT fk_resource FOREIGN KEY (resource_name)
+            REFERENCES resources(name) ON DELETE CASCADE,
+        )`)
     er := tx.Commit()
     if er != nil {
-        tx.Rollback()
-        logger.Fatal(fmt.Sprintf("cannot commit transaction: %v", er))
+        logger.Debug(fmt.Sprintf("cannot commit transaction: %v", er))
+        return 1
     }
     return 0
 }

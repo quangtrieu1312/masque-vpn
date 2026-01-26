@@ -1,221 +1,146 @@
 package repository
 
 import (
-	"context"
-    _ "github.com/lib/pq"
+//	"database/sql"
+    "github.com/lib/pq"
+
     "github.com/quangtrieu1312/masque-vpn/server/domain"
+    "github.com/quangtrieu1312/masque-vpn/server/db"
 )
 
-type Client struct {
-    Name string
-    LastSeen uint64
-    Roles []*Role
-}
-
-type IP struct {
-    ClientName string
-    Client Client
-    Value string
-}
-
-type Role struct {
-    Name string
-    Clients []*Client
-    Resources []*Resource
-}
-
-type Resource struct {
-    Name string
-    Value string
-    Clients []*Client
-    Roles []*Role
-}
-
-type DHCP struct {
-    ClientCIDR string
-    NextAvailableIP string
-}
-
-func GetAllClients(ctx context.Context) ([]*Client, error) {
-    db := GetDBInstance(ctx).conn
-    clients, err := gorm.G[*Client](db).Find(ctx)
-    return clients, err
-}
-
-func GetClientById(ctx context.Context, id string) (*Client, error) {
-    db := GetDBInstance(ctx).conn
-    client, err := gorm.G[*Client](db).Where("id = ?", id).First(ctx)
-    return client, err
-}
-
-func GetClientResources(ctx context.Context, id string) ([]*Resource, error) {
-    db := GetDBInstance(ctx).conn
-    client, err := gorm.G[*Client](db).Where("id = ?", id).First(ctx)
+func GetAllResources() (*[]domain.Resource, error) {
+    tx, err := db.GetConnection().Begin()
     if err != nil {
         return nil, err
     }
-    roles := client.Roles
-    ret := []*Resource{}
-    for i := 0; i < len(roles); i++ {
-        ret = append(ret, roles[i].Resources...)
+    resources := []domain.Resource{}
+    rows, err := tx.Query("SELECT name, value FROM resources")
+    if err != nil {
+        return nil, err
     }
-    LogDebug("3")
-    return ret, nil
+    defer rows.Close()
+    for rows.Next() {
+        r := domain.Resource{}
+	    err := rows.Scan(&r.Name, &r.Value)
+	    if err != nil {
+		    return nil, err
+	    }
+        resources = append(resources, r)
+    }
+    err = rows.Err()
+    if err != nil {
+	    return nil, err
+    }
+    return &resources, err
 }
 
-func GetAllRoles(ctx context.Context) ([]*Role, error) {
-    db := GetDBInstance(ctx).conn
-    roles, err := gorm.G[*Role](db).Find(ctx)
-    return roles, err
+func GetClientResources(name string) (*[]domain.Resource, error) {
+    tx, err := db.GetConnection().Begin()
+    if err != nil {
+        return nil, err
+    }
+    resources := []domain.Resource{}
+
+    rows, err := tx.Query(`
+        SELECT r.name, r.value 
+        FROM resources as r
+        JOIN roles_resources as rr
+        ON r.name = rr.resource_name
+        JOIN clients_roles as cr
+        ON cr.role_name = rr.role_name
+        WHERE cr.client_name = $1`, name)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+    for rows.Next() {
+        r := domain.Resource{}
+	    err := rows.Scan(&r.Name, &r.Value)
+	    if err != nil {
+		    return nil, err
+	    }
+        resources = append(resources, r)
+    }
+    err = rows.Err()
+    if err != nil {
+	    return nil, err
+    }
+    return &resources, nil
 }
 
-func GetAllResources(ctx context.Context) ([]*Resource, error) {
-    db := GetDBInstance(ctx).conn
-    resources, err := gorm.G[*Resource](db).Find(ctx)
-    return resources, err
-}
-
-func AssignRolesToClient(ctx context.Context, roleNames []string, clientId string) (bool, error) {
-    db := GetDBInstance(ctx).conn
-    err := db.Transaction(func(tx *gorm.DB) error {
-        roles, rerr := gorm.G[*Role](tx).Where("name in ?", roleNames).Find(ctx)
-        if rerr != nil {
-            return rerr
-        }
-        _, e := gorm.G[*Client](db).Where("id = ?", clientId).Update(ctx, "roles", roles)
-
-        return e
-    })
+func UpsertResources(resources *[]domain.Resource) (bool, error) {
+    tx, err := db.GetConnection().Begin()
     if err != nil {
         return false, err
     }
-    return true, nil
-}
-
-func AssignResourcesToRole(ctx context.Context, resourceNames []string, roleName string) (bool, error) {
-    db := GetDBInstance(ctx).conn
-    err := db.Transaction(func(tx *gorm.DB) error {
-        resources, rerr := gorm.G[*Role](tx).Where("name in ?", resourceNames).Find(ctx)
-        if rerr != nil {
-            return rerr
-        }
-        _, e := gorm.G[*Role](db).Where("name = ?", roleName).Update(ctx, "resources", resources)
-
-        return e
-    })
+    stmt, err := tx.Prepare(`
+        INSERT INTO resources(name, value)
+        VALUES($1, $2)
+        ON CONFLICT (name)
+        DO UPDATE SET value = $2
+        )`)
     if err != nil {
-        return false, err
+	    return false, err
     }
-    return true, nil
-}
+    defer stmt.Close()
 
-func CreateClients(ctx context.Context, clientNames []string) (bool, error) {
-    db := GetDBInstance(ctx).conn
-    clients := []*Client{}
-    for i := 0; i < len(clientNames); i++ {
-        roles := []*Role{}
-        clients = append(clients, &Client{
-            Name: clientNames[i],
-            Roles: append(roles, &Role{Name: clientNames[i]}),
-        })
-    }
-    result := db.Create(clients)
-    if result.Error != nil {
-        return false, result.Error
-    }
-    return true, nil
-}
+    for _, resource := range(*resources) {
+        _, err = stmt.Exec(resource.Name, resource.Value)
 
-func CreateRoles(ctx context.Context, roles []*Role) (bool, error) {
-    db := GetDBInstance(ctx).conn
-    result := db.Create(roles)
-    if result.Error != nil {
-        return false, result.Error
-    }
-    return true, nil
-}
-
-func CreateResources(ctx context.Context, resources []*Resource) (bool, error) {
-    db := GetDBInstance(ctx).conn
-    result := db.Create(resources)
-    if result.Error != nil {
-        return false, result.Error
-    }
-    return true, nil
-}
-
-func DeleteClients(ctx context.Context, clientIds []string) (bool, error) {
-    db := GetDBInstance(ctx).conn
-    _, err := gorm.G[*Client](db).Where("id IN ?", clientIds).Delete(ctx)
-    if err != nil {
-        return false, err
-    }
-    return true, nil
-}
-
-func DeleteRoles(ctx context.Context, roleNames []string) (bool, error) {
-    db := GetDBInstance(ctx).conn
-    _, err := gorm.G[*Role](db).Where("name IN ?", roleNames).Delete(ctx)
-    if err != nil {
-        return false, err
-    }
-    return true, nil
-}
-
-func DeleteResources(ctx context.Context, resourceNames []string) (bool, error) {
-    db := GetDBInstance(ctx).conn
-    _, err := gorm.G[*Resource](db).Where("name IN ?", resourceNames).Delete(ctx)
-    if err != nil {
-        return false, err
-    }
-    return true, nil
-}
-
-func GetDHCP(ctx context.Context) (*DHCP, error) {
-    db := GetDBInstance(ctx).conn
-    conf, err := gorm.G[*DHCP](db).First(ctx)
-    return conf, err
-}
-
-func CreateDHCP(ctx context.Context, newClientCIDR string) (bool, error) {
-    db := GetDBInstance(ctx).conn
-    firstIP, err := FirstIP(newClientCIDR)
-    if err != nil {
-        return false, err
-    }
-    result := db.Create(&DHCP{ClientCIDR: newClientCIDR, NextAvailableIP: firstIP})
-    if result.Error != nil {
-        return false, result.Error
-    }
-    return true, nil
-}
-
-func AssignIPToClient(ctx context.Context, clientId string) (string, error) {
-    db := GetDBInstance(ctx).conn
-    assignedIP := ""
-    err := db.Transaction(func(tx *gorm.DB) error {
-        oldIp, oerr := gorm.G[*IP](db).Where("client_id = ?", clientId).First(ctx)
-        if oerr == nil && len(oldIp.Value) > 0 {
-            assignedIP = oldIp.Value
-            return nil
-        }
-        dhcp, err := gorm.G[*DHCP](tx).First(ctx)
         if err != nil {
-            return err
+	        return false, err
         }
-        assignedIP = dhcp.NextAvailableIP
-        _, e := gorm.G[*IP](db).Where("client_id = ?", clientId).Update(ctx, "value", assignedIP)
-        if e != nil {
-            return e
-        }
-        nextIP, e:= NextIP(assignedIP, dhcp.ClientCIDR)
-        if e != nil {
-            return e
-        }
-
-        _, er := gorm.G[*DHCP](db).Update(ctx, "value", nextIP)
-
-        return er
-    })
-    return assignedIP, err
+    }
+    err = tx.Commit()
+    if err != nil {
+        return false, err
+    }
+    return true, nil
 }
+
+func UpdateResourceName(oldName string, newName string) (bool, error) {
+    tx, err := db.GetConnection().Begin()
+    if err != nil {
+        return false, err
+    }
+    stmt, err := tx.Prepare(`UPDATE resources SET name = $1 WHERE name = $2`)
+    if err != nil {
+	    return false, err
+    }
+    defer stmt.Close()
+
+    _, err = stmt.Exec(newName, oldName)
+
+    if err != nil {
+	    return false, err
+    }
+    err = tx.Commit()
+    if err != nil {
+        return false, err
+    }
+    return true, nil
+}
+
+func DeleteResources(resourceNames []string) (bool, error) {
+    tx, err := db.GetConnection().Begin()
+    if err != nil {
+        return false, err
+    }
+    stmt, err := tx.Prepare(`DELETE FROM resources WHERE name = ANY($1)`)
+    if err != nil {
+	    return false, err
+    }
+    defer stmt.Close()
+
+    _, err = stmt.Exec(pq.Array(resourceNames))
+
+    if err != nil {
+	    return false, err
+    }
+    err = tx.Commit()
+    if err != nil {
+        return false, err
+    }
+    return true, nil
+}
+

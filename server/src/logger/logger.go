@@ -2,7 +2,6 @@ package logger
 
 import (
     "log"
-    "sync"
     "strings"
     "os"
 )
@@ -46,8 +45,6 @@ func ConvertStringToLogLevel(levelName string) LogLevel {
         return INFO
     }
 }
-
-var lock = &sync.Mutex{}
 
 type logger struct {
     level LogLevel
