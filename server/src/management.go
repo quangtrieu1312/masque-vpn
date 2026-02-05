@@ -168,7 +168,7 @@ func RunManagementService(ctx context.Context) {
                     return
                 }
                 clientIDs, _ := service.UpsertClients(ctx, body.Names)
-                if err == nil {
+                if err == nil && clientIDs != nil {
                     responseBody := UpsertClientsResponse{*clientIDs}
                     jsonBytes, err := json.Marshal(responseBody)
                     if err != nil {
