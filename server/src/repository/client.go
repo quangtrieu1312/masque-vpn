@@ -57,10 +57,10 @@ func GetClientByID(clientID int64) (*domain.Client, error) {
     return &client, nil
 }
 
-func UpsertClients(clientNames []string) (bool, error) {
+func UpsertClients(clientNames []string) (*[]int64, error) {
     tx, err := db.GetConnection().Begin()
     if err != nil {
-        return false, err
+        return nil, err
     }
     stmt, err := tx.Prepare(`
         INSERT INTO clients(name, ip)
@@ -69,10 +69,10 @@ func UpsertClients(clientNames []string) (bool, error) {
         DO NOTHING
         `)
     if err != nil {
-	    return false, err
+	    return nil, err
     }
     defer stmt.Close()
-
+    clientIDs := []int64{}
     for i := 0; i < len(clientNames); i++ {
         client := domain.Client{}
         client.Name = clientNames[i]
@@ -80,33 +80,37 @@ func UpsertClients(clientNames []string) (bool, error) {
         dhcp := domain.DHCP{}
         err = tx.QueryRow("SELECT id, first_ip, last_ip FROM dhcp ORDER BY first_ip ASC").Scan(&dhcp.ID, &dhcp.FirstIP, &dhcp.LastIP)
         if err != nil {
-	        return false, err
+	        return nil, err
         }
 
         client.IP = utility.IntToIPv4(uint32(dhcp.FirstIP)).String()
         if dhcp.FirstIP == dhcp.LastIP {
             _, err = tx.Exec("DELETE FROM dhcp WHERE id = ?", dhcp.ID)
             if err != nil {
-	            return false, err
+	            return nil, err
             }
         } else {
             _, err = tx.Exec("UPDATE dhcp SET first_ip = ?, last_ip = ? WHERE id = ?", dhcp.FirstIP + 1, dhcp.LastIP, dhcp.ID)
             if err != nil {
-	            return false, err
+	            return nil, err
             }
         }
 
-        _, err = stmt.Exec(client.Name, client.IP)
-
+        result, err := stmt.Exec(client.Name, client.IP)
         if err != nil {
-	        return false, err
+	        return nil, err
         }
+        id, err := result.LastInsertId()
+        if err != nil {
+            return nil, err
+        }
+        clientIDs = append(clientIDs, id) 
     }
     err = tx.Commit()
     if err != nil {
-        return false, err
+        return nil, err
     }
-    return true, nil
+    return &clientIDs, nil
 }
 
 func AssignIPToClient(clientID int64) (string, error) { 

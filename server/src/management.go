@@ -163,9 +163,16 @@ func RunManagementService(ctx context.Context) {
                     w.WriteHeader(http.StatusBadRequest)
                     return
                 }
-                ok, _ := service.UpsertClients(ctx, body.Names)
-                if ok {
+                clientIDs, _ := service.UpsertClients(ctx, body.Names)
+                if err == nil {
                     w.WriteHeader(http.StatusOK)
+                    jsonBytes, err := json.Marshal(*clientIDs)
+                    if err != nil {
+                        logger.Debug(fmt.Sprintf("Cannot marshal clientIDs to json: %v", err))
+                        w.WriteHeader(http.StatusInternalServerError)
+                    } else {
+                        w.Write(jsonBytes)
+                    }
                 } else {
                     w.WriteHeader(http.StatusBadRequest)
                 }

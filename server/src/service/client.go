@@ -12,7 +12,7 @@ func GetAllClients(ctx context.Context) (*[]domain.Client, error) {
 func GetClientByID(ctx context.Context, id int64) (*domain.Client, error) {
     return repository.GetClientByID(id)
 }
-func UpsertClients(ctx context.Context, clientNames []string) (bool, error) {
+func UpsertClients(ctx context.Context, clientNames []string) (*[]int64, error) {
     return repository.UpsertClients(clientNames)
 }
 func AssignIPToClient(ctx context.Context, clientID int64) (string, error) { 

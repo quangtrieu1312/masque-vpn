@@ -44,6 +44,6 @@ curl --unix-socket $MANAGEMENT_SOCKET_PATH \
 }
 '
 
-genClientCert "$clientName"
+genClientCert "$id" "$clientName"
 
 log "info" "Client \"$clientName\" has been created"
