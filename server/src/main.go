@@ -164,6 +164,7 @@ func RunPostUp(ctx context.Context) {
     if err != nil {
         logger.Fatal(fmt.Sprintf("Cannot run postup scripts: %v", err))
     }
+    RunManagementService(ctx)
 }
 
 func RunPreDown() {
