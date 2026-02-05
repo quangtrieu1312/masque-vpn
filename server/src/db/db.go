@@ -4,7 +4,7 @@ import (
     "fmt"
     "context"
     "database/sql"
-    _ "github.com/lib/pq"
+    _ "github.com/mattn/go-sqlite3"
     "github.com/quangtrieu1312/masque-vpn/server/logger"
     "github.com/quangtrieu1312/masque-vpn/server/config"
 )
@@ -30,13 +30,8 @@ func CloseConnection() {
 func generateInstance() *DB {
     ctx := context.Background()
     config.Load(&ctx)
-    host := ctx.Value("DB_HOST").(string)
-    port := ctx.Value("DB_PORT").(string)
-    name := ctx.Value("DB_NAME").(string)
-    username := ctx.Value("DB_USERNAME").(string)
-    password := ctx.Value("DB_PASSWORD").(string)
-    info := fmt.Sprintf("host=%v port=%v user=%v password=%v dbname=%v sslmode=disable", host, port, username, password, name)
-    dbConn, err := sql.Open("postgres", info)
+    info := ctx.Value("DB_INFO").(string)
+    dbConn, err := sql.Open("sqlite3", info)
     if err != nil {
         logger.Fatal(fmt.Sprintf("cannot connect to DB: %v",err))
     }

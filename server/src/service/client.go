@@ -9,24 +9,24 @@ import (
 func GetAllClients(ctx context.Context) (*[]domain.Client, error) {
     return repository.GetAllClients()
 }
-func GetClientByName(ctx context.Context, name string) (*domain.Client, error) {
-    return repository.GetClientByName(name)
+func GetClientByID(ctx context.Context, id int64) (*domain.Client, error) {
+    return repository.GetClientByID(id)
 }
 func UpsertClients(ctx context.Context, clientNames []string) (bool, error) {
     return repository.UpsertClients(clientNames)
 }
-func AssignIPToClient(ctx context.Context, clientName string) (string, error) { 
-    return repository.AssignIPToClient(clientName)
+func AssignIPToClient(ctx context.Context, clientID int64) (string, error) { 
+    return repository.AssignIPToClient(clientID)
 }
-func DeleteClients(ctx context.Context, clientNames []string) (bool, error) {
-    return repository.DeleteClients(clientNames)
+func DeleteClients(ctx context.Context, clientIDs []int64) (bool, error) {
+    return repository.DeleteClients(clientIDs)
 }
-func UnassignRolesToClient(ctx context.Context, roleNames []string, clientName string) (bool, error) {
-    return repository.UnassignRolesToClient(roleNames, clientName)
+func UnassignRolesToClients(ctx context.Context, roleIDs []int64, clientIDs []int64) (bool, error) {
+    return repository.UnassignRolesToClients(roleIDs, clientIDs)
 }
-func AssignRolesToClient(ctx context.Context, roleNames []string, clientName string) (bool, error) {
-    return repository.AssignRolesToClient(roleNames, clientName)
+func AssignRolesToClients(ctx context.Context, roleIDs []int64, clientIDs []int64) (bool, error) {
+    return repository.AssignRolesToClients(roleIDs, clientIDs)
 }
-func UpdateClientName(ctx context.Context, oldName string, newName string) (bool, error) {
-    return repository.UpdateClientName(oldName, newName)
+func UpdateClientName(ctx context.Context, clientID int64, newName string) (bool, error) {
+    return repository.UpdateClientName(clientID, newName)
 }

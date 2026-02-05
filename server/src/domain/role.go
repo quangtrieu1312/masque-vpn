@@ -1,5 +1,6 @@
 package domain
 
 type Role struct {
-    Name string
+    ID int64 `json:"id"`
+    Name string `json:"name"`
 }

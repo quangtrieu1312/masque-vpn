@@ -25,7 +25,7 @@ set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters
 function log {
     level=$(echo $1 | tr '[a-z]' '[A-Z]')
     msg=$2
-    echo -e "$(date --rfc-3339 ns) genServerCert [$level]: $msg"
+    echo -e "$(date --rfc-3339 ns) genClientCert [$level]: $msg"
 }
 
 clientName=$1

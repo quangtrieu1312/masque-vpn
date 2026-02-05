@@ -1,6 +1,7 @@
 package domain
 
 type DHCP struct {
-    FirstIP int64
-    LastIP int64
+    ID int64 `json:"id"`
+    FirstIP int64 `json:"first_ip"`
+    LastIP int64 `json:"last_ip"`
 }

@@ -11,3 +11,5 @@ SERVER_CERT_DIR=$CERT_DIR/server
 CLIENT_CA_DIR=$CA_DIR/client
 CLIENT_CERT_DIR=$CERT_DIR/client
 
+MANAGEMENT_SOCKET_PATH=/var/run/masqued.sock
+

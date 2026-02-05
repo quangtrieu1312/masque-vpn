@@ -1,11 +1,12 @@
 package repository
 
 import (
-//	"database/sql"
-    "github.com/lib/pq"
+	"fmt"
+	_ "github.com/mattn/go-sqlite3"
 
-    "github.com/quangtrieu1312/masque-vpn/server/domain"
-    "github.com/quangtrieu1312/masque-vpn/server/db"
+	"github.com/quangtrieu1312/masque-vpn/server/db"
+	"github.com/quangtrieu1312/masque-vpn/server/domain"
+	"github.com/quangtrieu1312/masque-vpn/server/utility"
 )
 
 func GetAllResources() (*[]domain.Resource, error) {
@@ -14,14 +15,14 @@ func GetAllResources() (*[]domain.Resource, error) {
         return nil, err
     }
     resources := []domain.Resource{}
-    rows, err := tx.Query("SELECT name, value FROM resources")
+    rows, err := tx.Query("SELECT id, name, value FROM resources")
     if err != nil {
         return nil, err
     }
     defer rows.Close()
     for rows.Next() {
         r := domain.Resource{}
-	    err := rows.Scan(&r.Name, &r.Value)
+	    err := rows.Scan(&r.ID, &r.Name, &r.Value)
 	    if err != nil {
 		    return nil, err
 	    }
@@ -31,10 +32,31 @@ func GetAllResources() (*[]domain.Resource, error) {
     if err != nil {
 	    return nil, err
     }
+    err = tx.Commit()
+    if err != nil {
+        return nil, err
+    }
     return &resources, err
 }
 
-func GetClientResources(name string) (*[]domain.Resource, error) {
+func GetResourceByID(resourceID int64) (*domain.Resource, error) {
+    tx, err := db.GetConnection().Begin()
+    if err != nil {
+        return nil, err
+    }
+    resource := domain.Resource{}
+    err = tx.QueryRow("SELECT id, name, value FROM roles WHERE id = ?", resourceID).Scan(&resource.ID, &resource.Name, resource.Value)
+    if err != nil {
+        return nil, err
+    }
+    err = tx.Commit()
+    if err != nil {
+        return nil, err
+    }
+    return &resource, nil   
+}
+
+func GetClientResources(clientID int64) (*[]domain.Resource, error) {
     tx, err := db.GetConnection().Begin()
     if err != nil {
         return nil, err
@@ -42,20 +64,20 @@ func GetClientResources(name string) (*[]domain.Resource, error) {
     resources := []domain.Resource{}
 
     rows, err := tx.Query(`
-        SELECT r.name, r.value 
+        SELECT r.id, r.name, r.value 
         FROM resources as r
         JOIN roles_resources as rr
-        ON r.name = rr.resource_name
+        ON r.id = rr.resource_id
         JOIN clients_roles as cr
-        ON cr.role_name = rr.role_name
-        WHERE cr.client_name = $1`, name)
+        ON cr.role_id = rr.role_id
+        WHERE cr.client_id = ?`, clientID)
     if err != nil {
         return nil, err
     }
     defer rows.Close()
     for rows.Next() {
         r := domain.Resource{}
-	    err := rows.Scan(&r.Name, &r.Value)
+	    err := rows.Scan(&r.ID, &r.Name, &r.Value)
 	    if err != nil {
 		    return nil, err
 	    }
@@ -64,6 +86,11 @@ func GetClientResources(name string) (*[]domain.Resource, error) {
     err = rows.Err()
     if err != nil {
 	    return nil, err
+    }
+
+    err = tx.Commit()
+    if err != nil {
+        return nil, err
     }
     return &resources, nil
 }
@@ -75,10 +102,10 @@ func UpsertResources(resources *[]domain.Resource) (bool, error) {
     }
     stmt, err := tx.Prepare(`
         INSERT INTO resources(name, value)
-        VALUES($1, $2)
+        VALUES(?, ?)
         ON CONFLICT (name)
-        DO UPDATE SET value = $2
-        )`)
+        DO UPDATE SET value = ?
+        `)
     if err != nil {
 	    return false, err
     }
@@ -98,18 +125,18 @@ func UpsertResources(resources *[]domain.Resource) (bool, error) {
     return true, nil
 }
 
-func UpdateResourceName(oldName string, newName string) (bool, error) {
+func UpdateResourceName(resourceID int64, newName string) (bool, error) {
     tx, err := db.GetConnection().Begin()
     if err != nil {
         return false, err
     }
-    stmt, err := tx.Prepare(`UPDATE resources SET name = $1 WHERE name = $2`)
+    stmt, err := tx.Prepare(`UPDATE resources SET name = ? WHERE id = ?`)
     if err != nil {
 	    return false, err
     }
     defer stmt.Close()
 
-    _, err = stmt.Exec(newName, oldName)
+    _, err = stmt.Exec(newName, resourceID)
 
     if err != nil {
 	    return false, err
@@ -121,18 +148,18 @@ func UpdateResourceName(oldName string, newName string) (bool, error) {
     return true, nil
 }
 
-func DeleteResources(resourceNames []string) (bool, error) {
+func DeleteResources(resourceIDs []int64) (bool, error) {
     tx, err := db.GetConnection().Begin()
     if err != nil {
         return false, err
     }
-    stmt, err := tx.Prepare(`DELETE FROM resources WHERE name = ANY($1)`)
+    stmt, err := tx.Prepare(fmt.Sprintf(`DELETE FROM resources WHERE id IN (%v)`, utility.Int64ArrayInCSVFormat(resourceIDs)))
     if err != nil {
 	    return false, err
     }
     defer stmt.Close()
 
-    _, err = stmt.Exec(pq.Array(resourceNames))
+    _, err = stmt.Exec()
 
     if err != nil {
 	    return false, err

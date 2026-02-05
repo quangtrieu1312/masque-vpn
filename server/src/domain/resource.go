@@ -1,6 +1,7 @@
 package domain
 
 type Resource struct {
-    Name string
-    Value string
+    ID int64 `json:"id"`
+    Name string `json:"name"`
+    Value string `json:"value"`
 }

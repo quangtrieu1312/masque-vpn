@@ -9,6 +9,6 @@ import (
 func GetAllAvailableIPRanges(ctx context.Context) (*[]domain.DHCP, error) {
     return repository.GetAllAvailableIPRanges()
 }
-func ResetDHCP(ctx context.Context, dhcp *domain.DHCP) (bool, error) {
-    return repository.ResetDHCP(dhcp)
+func ResetDHCP(ctx context.Context, firstIP int64, lastIP int64) (bool, error) {
+    return repository.ResetDHCP(firstIP, lastIP)
 }

@@ -379,7 +379,7 @@ func handleConn(contxt *context.Context, tunChan chan []byte,  conn *connectip.C
     // Note:
     // We can assign any subnet size here but I'm using /32 for simplicity
     // I may want to go back to this hardcoded number when I see issues for site-to-side VPN
-    clientId := ctx.Value("clientId").(string)
+    clientId := ctx.Value("clientId").(int64)
     peerAddr, perr := service.AssignIPToClient(ctx, clientId)
     if perr != nil {
         return fmt.Errorf("Failed to get available IP: %w", perr)

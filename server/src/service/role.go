@@ -9,18 +9,21 @@ import (
 func GetAllRoles(ctx context.Context) (*[]domain.Role, error) {
     return repository.GetAllRoles()
 }
-func AssignResourcesToRole(ctx context.Context, resourceNames []string, roleName string) (bool, error) {
-    return repository.AssignResourcesToRole(resourceNames, roleName)
+func GetRoleByID(ctx context.Context, id int64) (*domain.Role, error) {
+    return repository.GetRoleByID(id)
 }
-func UnassignResourcesToRole(ctx context.Context, resourceNames []string, roleName string) (bool, error) {
-    return repository.UnassignResourcesToRole(resourceNames, roleName)
+func AssignResourcesToRoles(ctx context.Context, resourceIDs []int64, roleIDs []int64) (bool, error) {
+    return repository.AssignResourcesToRoles(resourceIDs, roleIDs)
 }
-func UpdateRoleName(ctx context.Context, oldName string, newName string) (bool, error) {
-    return repository.UpdateRoleName(oldName, newName)
+func UnassignResourcesToRoles(ctx context.Context, resourceIDs []int64, roleIDs []int64) (bool, error) {
+    return repository.UnassignResourcesToRoles(resourceIDs, roleIDs)
 }
-func UpsertRoles(ctx context.Context, roles *[]domain.Role) (bool, error) {
-    return repository.UpsertRoles(roles)
+func UpdateRoleName(ctx context.Context, roleID int64, newName string) (bool, error) {
+    return repository.UpdateRoleName(roleID, newName)
 }
-func DeleteRoles(ctx context.Context, roleNames []string) (bool, error) {
-    return repository.DeleteRoles(roleNames)
+func UpsertRoles(ctx context.Context, roleNames []string) (bool, error) {
+    return repository.UpsertRoles(roleNames)
+}
+func DeleteRoles(ctx context.Context, roleIDs []int64) (bool, error) {
+    return repository.DeleteRoles(roleIDs)
 }

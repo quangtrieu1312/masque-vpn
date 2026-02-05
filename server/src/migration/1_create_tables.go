@@ -29,10 +29,10 @@ func (m Migration1) Run() int {
     //Create table for migration
     tx.Exec(`
         CREATE TABLE IF NOT EXISTS migration (
+            id integer NOT NULL PRIMARY KEY,
             version integer NOT NULL,
             status integer NOT NULL DEFAULT 0,
             description text,
-            PRIMARY KEY (version)
         )`)
     tx.Exec(`
         INSERT INTO TABLE migration(version, status, description)
@@ -44,44 +44,47 @@ func (m Migration1) Run() int {
     //Create table for domains
     tx.Exec(`
         CREATE TABLE IF NOT EXISTS clients (
-            name text NOT NULL,
+            id integer PRIMARY KEY,
+            name text NOT NULL UNIQUE,
             last_seen integer NOT NULL DEFAULT 0,
-            ip text NOT NULL,
-            PRIMARY KEY (name)
+            ip text,
         )`)
     tx.Exec(`
         CREATE TABLE IF NOT EXISTS resources (
-            name text NOT NULL,
+            id integer PRIMARY KEY,
+            name text NOT NULL UNIQUE,
             value text NOT NULL,
-            PRIMARY KEY (name)
         )`)
     tx.Exec(`
         CREATE TABLE IF NOT EXISTS roles (
-            name text NOT NULL,
-            PRIMARY KEY (name)
+            id integer PRIMARY KEY,
+            name text NOT NULL UNIQUE,
         )`)
     tx.Exec(`
         CREATE TABLE IF NOT EXISTS dhcp (
+            id integer PRIMARY KEY,
             first_ip bigint NOT NULL UNIQUE,
             last_ip bigint NOT NULL UNIQUE,
         )`)
     tx.Exec(`
         CREATE TABLE IF NOT EXISTS clients_roles (
-            client_name text NOT NULL,
-            role_name text NOT NULL,
-            CONSTRAINT fk_client FOREIGN KEY (client_name)
-            REFERENCES clients(name) ON DELETE CASCADE,
-            CONSTRAINT fk_role FOREIGN KEY (role_name)
-            REFERENCES roles(name) ON DELETE CASCADE,
+            id integer PRIMARY KEY,
+            client_id integer NOT NULL,
+            role_id integer NOT NULL,
+            CONSTRAINT fk_client FOREIGN KEY (client_id)
+            REFERENCES clients(id) ON DELETE CASCADE,
+            CONSTRAINT fk_role FOREIGN KEY (role_id)
+            REFERENCES roles(id) ON DELETE CASCADE,
         )`)
     tx.Exec(`
         CREATE TABLE IF NOT EXISTS roles_resources (
-            role_name text NOT NULL,
-            resource_name text NOT NULL,
-            CONSTRAINT fk_role FOREIGN KEY (role_name)
-            REFERENCES roles(name) ON DELETE CASCADE,
-            CONSTRAINT fk_resource FOREIGN KEY (resource_name)
-            REFERENCES resources(name) ON DELETE CASCADE,
+            id integer PRIMARY KEY,
+            role_id integer NOT NULL,
+            resource_id integer NOT NULL,
+            CONSTRAINT fk_role FOREIGN KEY (role_id)
+            REFERENCES roles(id) ON DELETE CASCADE,
+            CONSTRAINT fk_resource FOREIGN KEY (resource_id)
+            REFERENCES resources(id) ON DELETE CASCADE,
         )`)
     er := tx.Commit()
     if er != nil {

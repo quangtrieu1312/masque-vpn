@@ -9,15 +9,18 @@ import (
 func GetAllResources(ctx context.Context) (*[]domain.Resource, error) {
     return repository.GetAllResources()
 }
-func GetClientResources(ctx context.Context, name string) (*[]domain.Resource, error) {
-    return repository.GetClientResources(name)
+func GetResourceByID(ctx context.Context, resourceID int64) (*domain.Resource, error) {
+    return repository.GetResourceByID(resourceID)
+}
+func GetClientResources(ctx context.Context, clientID int64) (*[]domain.Resource, error) {
+    return repository.GetClientResources(clientID)
 }
 func UpsertResources(ctx context.Context, resources *[]domain.Resource) (bool, error) {
     return repository.UpsertResources(resources)
 }
-func UpdateResourceName(ctx context.Context, oldName string, newName string) (bool, error) {
-    return repository.UpdateResourceName(oldName, newName)
+func UpdateResourceName(ctx context.Context, resourceID int64, newName string) (bool, error) {
+    return repository.UpdateResourceName(resourceID, newName)
 }
-func DeleteResources(ctx context.Context, resourceNames []string) (bool, error) {
-    return repository.DeleteResources(resourceNames)
+func DeleteResources(ctx context.Context, resourceIDs []int64) (bool, error) {
+    return repository.DeleteResources(resourceIDs)
 }

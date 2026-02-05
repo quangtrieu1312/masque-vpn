@@ -62,7 +62,7 @@ set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters
 function log {
     level=$(echo $1 | tr '[a-z]' '[A-Z]')
     msg=$2
-    echo -e "$(date --rfc-3339 ns) genTrustedRootCA [$level]: $msg"
+    echo -e "$(date --rfc-3339 ns) genClientCA [$level]: $msg"
 }
 
 WORK_DIR=$CLIENT_CA_DIR
