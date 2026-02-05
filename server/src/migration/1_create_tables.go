@@ -86,14 +86,16 @@ func (m Migration1) Run(ctx context.Context) int {
         logger.Debug(fmt.Sprintf("cannot configure DHCP: %v", err))
         return 1
     }
-    _, firstIPInt, _ := utility.ParseIP(firstIPString)
+    firstIP, _, _ := utility.ParseIP(firstIPString)
+    firstIPInt := utility.IPv4ToInt(firstIP)
     logger.Info(fmt.Sprintf("first IP string=%v, IP int=%v", firstIPString, firstIPInt))
     lastIPString, err := utility.LastUsableIP(clientCIDR)
     if err != nil {
         logger.Debug(fmt.Sprintf("cannot configure DHCP: %v", err))
         return 1
     }
-    _, lastIPInt, _ := utility.ParseIP(lastIPString)
+    lastIP, _, _ := utility.ParseIP(lastIPString)
+    lastIPInt := utility.IPv4ToInt(lastIP)
     logger.Info(fmt.Sprintf("last IP string=%v, IP int=%v", lastIPString, lastIPInt))
     tx.Exec(`
         INSERT INTO dhcp(id, first_ip, last_ip)
