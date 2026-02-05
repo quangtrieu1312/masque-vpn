@@ -24,6 +24,10 @@ type UpsertClientsRequest struct {
     Names []string `json:"names"`
 }
 
+type UpsertClientsResponse struct {
+    IDs []int64 `json:"ids"`
+}
+
 type AssignRolesToClientsRequest struct {
     ClientIDs []int64 `json:"client_ids"`
     RoleIDs []int64 `json:"role_ids"`
@@ -165,13 +169,14 @@ func RunManagementService(ctx context.Context) {
                 }
                 clientIDs, _ := service.UpsertClients(ctx, body.Names)
                 if err == nil {
-                    w.WriteHeader(http.StatusOK)
-                    jsonBytes, err := json.Marshal(*clientIDs)
+                    responseBody := UpsertClientsResponse{*clientIDs}
+                    jsonBytes, err := json.Marshal(responseBody)
                     if err != nil {
                         logger.Debug(fmt.Sprintf("Cannot marshal clientIDs to json: %v", err))
                         w.WriteHeader(http.StatusInternalServerError)
                     } else {
                         w.Write(jsonBytes)
+                        w.WriteHeader(http.StatusOK)
                     }
                 } else {
                     w.WriteHeader(http.StatusBadRequest)
