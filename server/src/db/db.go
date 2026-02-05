@@ -5,6 +5,7 @@ import (
     "context"
     "database/sql"
     _ "github.com/mattn/go-sqlite3"
+    "github.com/quangtrieu1312/masque-vpn/server/constants"
     "github.com/quangtrieu1312/masque-vpn/server/logger"
     "github.com/quangtrieu1312/masque-vpn/server/config"
 )
@@ -30,7 +31,7 @@ func CloseConnection() {
 func generateInstance() *DB {
     ctx := context.Background()
     config.Load(&ctx)
-    info := ctx.Value("DB_INFO").(string)
+    info := constants.DB_INFO
     dbConn, err := sql.Open("sqlite3", info)
     if err != nil {
         logger.Fatal(fmt.Sprintf("cannot connect to DB: %v",err))
