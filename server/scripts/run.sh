@@ -11,9 +11,7 @@ log "info" "Initializing masque server"
 log "info" "Environment variables ---->>\n$(printenv)"
 log "info" "Creating server CA, server cert, and client CA"
 
-chmod +x $SCRIPT_DIR/*
-
-
+chmod -R +x $SCRIPT_DIR/*
 
 ln -s $SCRIPT_DIR/gen_server_CA.sh /usr/sbin/genServerCA
 ln -s $SCRIPT_DIR/gen_client_CA.sh /usr/sbin/genClientCA
