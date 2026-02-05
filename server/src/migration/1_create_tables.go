@@ -27,13 +27,13 @@ func (m Migration1) Run() int {
         logger.Fatal(fmt.Sprintf("cannot start DB transaction: %v", err))
     }
     //Create table for migration
-    tx.Exec(`CREATE TABLE IF NOT EXISTS migration (
+    tx.Exec(`CREATE TABLE IF NOT EXISTS migrations (
             id integer NOT NULL PRIMARY KEY,
-            version integer NOT NULL,
+            version integer NOT NULL UNIQUE,
             status integer NOT NULL DEFAULT 0,
             description text)`)
     tx.Exec(`
-        INSERT INTO TABLE migration(version, status, description)
+        INSERT INTO migrations(version, status, description)
         VALUES(?, ?, ?)
         ON CONFLICT (version)
         DO NOTHING
