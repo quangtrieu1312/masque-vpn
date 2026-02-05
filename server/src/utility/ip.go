@@ -32,7 +32,15 @@ func FirstIP(cidr string) (string, error) {
     return netAddr.Next().String(), nil
 }
 
-func LastIP(prefix netip.Prefix) netip.Addr {
+func LastIP(cidr string) (string, error) {
+    prefix, err := netip.ParsePrefix(cidr)
+    if err != nil {
+        return "", err
+    }
+    return LastIPAddr(prefix).String(), nil
+}
+
+func LastIPAddr(prefix netip.Prefix) netip.Addr {
 	addr := prefix.Addr()
 	bytes := addr.AsSlice()
 

@@ -2,8 +2,10 @@ package migration
 
 import (
     "fmt"
+    "context"
     "github.com/quangtrieu1312/masque-vpn/server/logger"
     "github.com/quangtrieu1312/masque-vpn/server/db"
+    "github.com/quangtrieu1312/masque-vpn/server/utility"
 )
 
 type Migration1 struct {
@@ -20,7 +22,7 @@ func GetMigration1() Migration1 {
     return m
 }
 
-func (m Migration1) Run() int {
+func (m Migration1) Run(ctx context.Context) int {
     logger.Info(fmt.Sprintf("DB migration %v: %v", m.Version, m.Description))
     tx, err := db.GetConnection().Begin()
     if err != nil {
@@ -56,11 +58,6 @@ func (m Migration1) Run() int {
             id integer PRIMARY KEY,
             name text NOT NULL UNIQUE)`)
     tx.Exec(`
-        CREATE TABLE IF NOT EXISTS dhcp (
-            id integer PRIMARY KEY,
-            first_ip bigint NOT NULL UNIQUE,
-            last_ip bigint NOT NULL UNIQUE)`)
-    tx.Exec(`
         CREATE TABLE IF NOT EXISTS clients_roles (
             id integer PRIMARY KEY,
             client_id integer NOT NULL,
@@ -78,6 +75,28 @@ func (m Migration1) Run() int {
             REFERENCES roles(id) ON DELETE CASCADE,
             CONSTRAINT fk_resource FOREIGN KEY (resource_id)
             REFERENCES resources(id) ON DELETE CASCADE)`)
+    tx.Exec(`
+        CREATE TABLE IF NOT EXISTS dhcp (
+            id integer PRIMARY KEY,
+            first_ip bigint NOT NULL UNIQUE,
+            last_ip bigint NOT NULL UNIQUE)`)
+    clientCIDR := ctx.Value("CLIENT_CIDR").(string)
+    firstIPString, _ := utility.FirstIP(clientCIDR)
+    _, firstIPInt, err := utility.ParseIP(firstIPString)
+    if err != nil {
+        logger.Debug(fmt.Sprintf("cannot configure DHCP: %v", err))
+    }
+    lastIPString, _ := utility.LastIP(clientCIDR)
+    _, lastIPInt, err := utility.ParseIP(lastIPString)
+    if err != nil {
+        logger.Debug(fmt.Sprintf("cannot configure DHCP: %v", err))
+    }
+    tx.Exec(`
+        INSERT INTO dhcp(id, first_ip, last_ip)
+        VALUES(1, ?, ?)
+        ON CONFLICT(id)
+        DO UPDATE SET first_ip = ?, last_ip = ?
+        `, firstIPInt, lastIPInt)
     er := tx.Commit()
     if er != nil {
         logger.Debug(fmt.Sprintf("cannot commit transaction: %v", er))

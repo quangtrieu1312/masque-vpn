@@ -1,6 +1,7 @@
 package migration
 
 import (
+    "context"
 )
 
 type MigrationStatus int
@@ -14,7 +15,7 @@ const (
 )
 
 type Migration interface {
-    Run() int
+    Run(ctx context.Context) int
 }
 
 func GenerateMigrationList() []Migration {
@@ -23,9 +24,9 @@ func GenerateMigrationList() []Migration {
     return migrations
 }
 
-func Invoke() {
+func Invoke(ctx context.Context) {
     migrations := GenerateMigrationList()
     for i:=0; i<len(migrations); i++ {
-        migrations[i].Run()
+        migrations[i].Run(ctx)
     }
 }

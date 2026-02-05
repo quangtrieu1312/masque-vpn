@@ -154,7 +154,7 @@ func Bootstrap(ctx context.Context) {
 func MigrateData(ctx context.Context) {
     // Migrate the schema
     logger.Info("Migrating data")
-    migration.Invoke()
+    migration.Invoke(ctx)
 }
 
 func RunPostUp(ctx context.Context) {
@@ -410,7 +410,7 @@ func handleConn(contxt *context.Context, tunChan chan []byte,  conn *connectip.C
         if e != nil {
             continue
         }
-        connectipRoute := connectip.IPRoute{StartIP: r.Addr(), EndIP: utility.LastIP(r), IPProtocol: ipProtocol}
+        connectipRoute := connectip.IPRoute{StartIP: r.Addr(), EndIP: utility.LastIPAddr(r), IPProtocol: ipProtocol}
         clientRoutes = append(clientRoutes, connectipRoute)
     }
 	if err := conn.AdvertiseRoute(ctx, clientRoutes); err != nil {
