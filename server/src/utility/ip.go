@@ -26,8 +26,19 @@ func FirstIP(cidr string) (string, error) {
         return "", err
     }
     netAddr := prefix.Addr()
-    if !prefix.Contains(netAddr.Next()) {
+    return netAddr.Next().String(), nil
+}
+
+func FirstUsableIP(cidr string) (string, error) {
+    prefix, err := netip.ParsePrefix(cidr)
+    if err != nil {
+        return "", err
+    }
+    netAddr := prefix.Addr()
+    if prefix.Bits() == 32 {
         return "", fmt.Errorf("Cannot handle /32")
+    } else if prefix.Bits() == 31 {
+        return netAddr.String(), nil
     }
     return netAddr.Next().String(), nil
 }
@@ -38,6 +49,21 @@ func LastIP(cidr string) (string, error) {
         return "", err
     }
     return LastIPAddr(prefix).String(), nil
+}
+
+func LastUsableIP(cidr string) (string, error) {
+    prefix, err := netip.ParsePrefix(cidr)
+    if err != nil {
+        return "", err
+    }
+    broadcastAddr := LastIPAddr(prefix)
+    if prefix.Bits() == 32 {
+        return "", fmt.Errorf("Cannot handle /32")
+    } else if prefix.Bits() == 31 {
+        return broadcastAddr.String(), nil
+    }
+    return LastIPAddr(prefix).Prev().String(), nil
+
 }
 
 func LastIPAddr(prefix netip.Prefix) netip.Addr {
