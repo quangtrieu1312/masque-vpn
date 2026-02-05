@@ -65,8 +65,6 @@ func UpsertClients(clientNames []string) (*[]int64, error) {
     stmt, err := tx.Prepare(`
         INSERT INTO clients(name, ip)
         VALUES(?, ?)
-        ON CONFLICT (name)
-        DO NOTHING
         `)
     if err != nil {
 	    return nil, err
