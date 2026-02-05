@@ -82,11 +82,13 @@ func (m Migration1) Run(ctx context.Context) int {
             last_ip bigint NOT NULL UNIQUE)`)
     clientCIDR := ctx.Value("CLIENT_CIDR").(string)
     firstIPString, _ := utility.FirstIP(clientCIDR)
+    logger.Info(fmt.Sprintf("first IP string: %v", firstIPString))
     _, firstIPInt, err := utility.ParseIP(firstIPString)
     if err != nil {
         logger.Debug(fmt.Sprintf("cannot configure DHCP: %v", err))
     }
     lastIPString, _ := utility.LastIP(clientCIDR)
+    logger.Info(fmt.Sprintf("last IP string: %v", lastIPString))
     _, lastIPInt, err := utility.ParseIP(lastIPString)
     if err != nil {
         logger.Debug(fmt.Sprintf("cannot configure DHCP: %v", err))
