@@ -148,10 +148,12 @@ func Bootstrap(ctx context.Context) {
     if err != nil {
         logger.Fatal(fmt.Sprintf("Failed bootstrap scripts: %v", err))
     }
+    MigrateData(ctx)
 }
 
 func MigrateData(ctx context.Context) {
     // Migrate the schema
+    logger.Info("Migrating data")
     migration.Invoke()
 }
 
