@@ -8,6 +8,7 @@ const BOOTSTRAP_SCRIPT_PATH = SCRIPT_DIR + "/bootstrap/main.sh"
 const POSTUP_SCRIPT_PATH = SCRIPT_DIR + "/postup/main.sh"
 const PREDOWN_SCRIPT_PATH = SCRIPT_DIR + "/predown/main.sh"
 const CONF_PATH = WORK_DIR + "/masqued.conf"
+const DB_INFO = WORK_DIR + "/data/masqued.db"
 
 const SERVER_CA_DIR = CA_DIR + "/server"
 const SERVER_CA_PATH = CA_DIR + "/server/certs/ca.cert.pem"
