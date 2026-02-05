@@ -29,6 +29,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"github.com/yosida95/uritemplate/v3"
 
+    "github.com/quangtrieu1312/masque-vpn/server/constants"
     "github.com/quangtrieu1312/masque-vpn/server/utility"
     "github.com/quangtrieu1312/masque-vpn/server/db"
     "github.com/quangtrieu1312/masque-vpn/server/config"
@@ -142,7 +143,7 @@ func main() {
 
 func Bootstrap(ctx context.Context) {
     logger.Info("Server in bootstrap phase")
-    cmd := exec.Command("/bin/bash", "-c", BOOTSTRAP_SCRIPT_PATH)
+    cmd := exec.Command("/bin/bash", "-c", constants.BOOTSTRAP_SCRIPT_PATH)
     _, err := cmd.Output()
     if err != nil {
         logger.Fatal(fmt.Sprintf("Failed bootstrap scripts: %v", err))
@@ -156,7 +157,7 @@ func MigrateData(ctx context.Context) {
 
 func RunPostUp(ctx context.Context) {
     logger.Info("Server in post-up phase")
-    cmd := exec.Command("/bin/bash", "-c", POSTUP_SCRIPT_PATH)
+    cmd := exec.Command("/bin/bash", "-c", constants.POSTUP_SCRIPT_PATH)
     _, err := cmd.Output()
     if err != nil {
         logger.Fatal(fmt.Sprintf("Cannot run postup scripts: %v", err))
@@ -165,7 +166,7 @@ func RunPostUp(ctx context.Context) {
 
 func RunPreDown() {
     logger.Info("Server in pre-down phase")
-    cmd := exec.Command("/bin/bash", "-c", PREDOWN_SCRIPT_PATH)
+    cmd := exec.Command("/bin/bash", "-c", constants.PREDOWN_SCRIPT_PATH)
     _, err := cmd.Output()
     if err != nil {
         logger.Fatal(fmt.Sprintf("Cannot run predown scripts: %v", err))
@@ -266,7 +267,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 	}
 	defer udpConn.Close()
 
-	cert, err := tls.LoadX509KeyPair(SERVER_CERT_PATH, SERVER_KEY_PATH)
+	cert, err := tls.LoadX509KeyPair(constants.SERVER_CERT_PATH, constants.SERVER_KEY_PATH)
 	if err != nil {
 		return fmt.Errorf("Failed to load TLS certificate: %w", err)
 	}
@@ -274,7 +275,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
     if err != nil {
 		return fmt.Errorf("Cannot create cert pool: %w", err)
     }
-    caCertPEM, err := os.ReadFile(CLIENT_CA_PATH)
+    caCertPEM, err := os.ReadFile(constants.CLIENT_CA_PATH)
     if err != nil {
         return fmt.Errorf("Cannot read client CA:", err)
 	}

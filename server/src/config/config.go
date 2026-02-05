@@ -4,14 +4,14 @@ import (
     "context"
 	"bufio"
 	"log"
-	"flag"
     "strings"
 	"os"
+
+    "github.com/quangtrieu1312/masque-vpn/server/constants"
 )
 
 func Load(ctx *context.Context) {
-    var configPath string
-    flag.StringVar(&configPath, "f", "/opt/masqued/masqued.conf", "Path to config file")
+    configPath := constants.CONF_PATH
     file, err := os.Open(configPath)
     if err != nil {
         log.Fatalf("Failed to open config file %v: %v", configPath, err)

@@ -9,6 +9,7 @@ import (
 	"strconv"
     "net/url"
 
+	"github.com/quangtrieu1312/masque-vpn/server/constants"
 	"github.com/quangtrieu1312/masque-vpn/server/logger"
 	"github.com/quangtrieu1312/masque-vpn/server/domain"
 	"github.com/quangtrieu1312/masque-vpn/server/service"
@@ -80,9 +81,9 @@ type ResetDHCPRequest struct {
     LastIP int64 `json:"last_ip"`
 }
 func RunManagementService(ctx context.Context) {
-    fd, err := net.Listen("unix", MANAGEMENT_SOCKET_PATH)
+    fd, err := net.Listen("unix", constants.MANAGEMENT_SOCKET_PATH)
     if err != nil {
-        logger.Fatal(fmt.Sprintf("Cannot listen on unix socket %v: %v", MANAGEMENT_SOCKET_PATH, err))
+        logger.Fatal(fmt.Sprintf("Cannot listen on unix socket %v: %v", constants.MANAGEMENT_SOCKET_PATH, err))
     }
 	mux := http.NewServeMux()
 	mux.HandleFunc("/client/{id}", func(w http.ResponseWriter, r *http.Request) {

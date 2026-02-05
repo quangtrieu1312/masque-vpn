@@ -1,4 +1,4 @@
-package main
+package constants
 
 const WORK_DIR = "/opt/masqued"
 const CA_DIR = WORK_DIR + "/ca"
