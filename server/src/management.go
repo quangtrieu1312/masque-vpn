@@ -179,6 +179,9 @@ func RunManagementService(ctx context.Context) {
                         w.WriteHeader(http.StatusOK)
                     }
                 } else {
+                    if err != nil {
+                        logger.Debug(fmt.Sprintf("Cannot upsert clients: %v", err))
+                    }
                     w.WriteHeader(http.StatusBadRequest)
                 }
                 break
