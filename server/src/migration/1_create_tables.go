@@ -95,8 +95,8 @@ func (m Migration1) Run(ctx context.Context) int {
         INSERT INTO dhcp(id, first_ip, last_ip)
         VALUES(1, ?, ?)
         ON CONFLICT(id)
-        DO UPDATE SET first_ip = ?, last_ip = ?
-        `, firstIPInt, lastIPInt, firstIPInt, lastIPInt)
+        DO NOTHING
+        `, firstIPInt, lastIPInt)
     er := tx.Commit()
     if er != nil {
         logger.Debug(fmt.Sprintf("cannot commit transaction: %v", er))
