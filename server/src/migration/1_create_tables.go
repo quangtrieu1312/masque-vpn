@@ -36,7 +36,7 @@ func (m Migration1) Run() int {
         )`)
     tx.Exec(`
         INSERT INTO TABLE migration(version, status, description)
-        VALUES($1, $2, $3)
+        VALUES(?, ?, ?)
         ON CONFLICT (version)
         DO NOTHING
         `, m.Version, Succeeded, m.Description)
