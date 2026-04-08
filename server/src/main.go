@@ -62,7 +62,7 @@ func main() {
     logLevel := ctx.Value("LOG_LEVEL").(string)
     logPath := ctx.Value("LOG_PATH").(string)
     logger.UpdateLogLevelName(logLevel)
-    logger.UpdateLogLevelName(logPath)
+    logger.UpdateLogPath(logPath)
     ifaceName := ctx.Value("WAN_INTERFACE").(string)
     bindAddr := netip.MustParseAddr(ctx.Value("BIND_ADDR").(string))
     listenPort, err := strconv.Atoi(ctx.Value("LISTEN_PORT").(string))
