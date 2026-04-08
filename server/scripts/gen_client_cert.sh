@@ -44,11 +44,10 @@ if [[ ! -f $CLIENT_CA_DIR/certs/ca.cert.pem ]]; then
     exit 1
 else
     log "info" "Generating client cert"
-    randId=$(dd if=/dev/urandom bs=1k count=1 2>/dev/null | base64 | tr -dc 'a-zA-Z0-9' | cut -c1-64)
     mkdir -p "$clientName"
     openssl req -new -newkey rsa:2048 -nodes -keyout $clientName/client.key -out $clientName/client.csr \
         -config /opt/masqued/extras/peer-req.conf -extensions v3_ca \
-        -subj "/C=US/ST=TX/L=Dallas/O=Masque Client/CN=$randId"
+        -subj "/C=US/ST=TX/L=Dallas/O=Masque Client/CN=$clientName"
     openssl ca -in $clientName/client.csr -out $clientName/client.crt -config /opt/masqued/extras/peer-ca.conf -rand_serial -batch -notext
     cat $CLIENT_CA_DIR/certs/ca.cert.pem >>$clientName/client.crt
     ln -s $SERVER_CA_DIR/certs/ca.cert.pem $clientName/ca.crt
