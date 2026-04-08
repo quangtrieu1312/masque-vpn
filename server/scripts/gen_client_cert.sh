@@ -55,7 +55,7 @@ else
         -subj "/C=US/ST=TX/L=Dallas/O=Masque Client/CN=$clientName"
     openssl ca -in $id/client.csr -out $id/client.crt -config /opt/masqued/extras/peer-ca.conf -rand_serial -batch -notext
     cat $CLIENT_CA_DIR/certs/ca.cert.pem >>$id/client.crt
-    ln $SERVER_CA_DIR/certs/ca.cert.pem $id/ca.crt
+    ln -s $SERVER_CA_DIR/certs/ca.cert.pem $id/ca.crt
     zip $id/bundle.zip $id/*.crt $id/*.key
     rm -rf $id/*.crt $id/*.key
     log "info" "New cert for client='$clientName', id='$id' has been created. Bundle available at $WORK_DIR/$clientName."
