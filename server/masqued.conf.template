@@ -1,4 +1,5 @@
 LOG_LEVEL=debug
+LOG_PATH=/opt/masqued/log
 WAN_INTERFACE=eth0
 BIND_ADDR=0.0.0.0
 LISTEN_PORT=443
