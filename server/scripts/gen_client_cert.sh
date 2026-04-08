@@ -49,17 +49,17 @@ if [[ ! -f $CLIENT_CA_DIR/certs/ca.cert.pem ]]; then
     exit 1
 else
     log "info" "Generating client cert"
-    mkdir -p "$id"
-    cd $id
+    mkdir -p "$clientName"
+    cd $clientName
     openssl req -new -newkey rsa:2048 -nodes -keyout client.key -out client.csr \
         -config /opt/masqued/extras/peer-req.conf -extensions v3_ca \
-        -subj "/C=US/ST=TX/L=Dallas/O=Masque Client/CN=$clientName"
+        -subj "/C=US/ST=TX/L=Dallas/O=Masque Client/CN=$id"
     openssl ca -in client.csr -out client.crt -config /opt/masqued/extras/peer-ca.conf -rand_serial -batch -notext
     cat $CLIENT_CA_DIR/certs/ca.cert.pem >>client.crt
     ln -s $SERVER_CA_DIR/certs/ca.cert.pem ca.crt
     zip bundle.zip *.crt *.key
     rm -rf *.crt *.key *.csr
-    log "info" "New cert for client='$clientName', id='$id' has been created. Bundle available at $WORK_DIR/$id."
+    log "info" "New cert for client='$clientName', id='$id' has been created. Bundle available at $WORK_DIR/$clientName."
 fi
 log "info" "Done"
 popd >/dev/null
