@@ -57,6 +57,7 @@ else
     cat $CLIENT_CA_DIR/certs/ca.cert.pem >>$id/client.crt
     ln $SERVER_CA_DIR/certs/ca.cert.pem $id/ca.crt
     zip $id/bundle.zip $id/*.crt $id/*.key
+    rm -rf $id/*.crt $id/*.key
     log "info" "New cert for client='$clientName', id='$id' has been created. Bundle available at $WORK_DIR/$clientName."
 fi
 log "info" "Done"
