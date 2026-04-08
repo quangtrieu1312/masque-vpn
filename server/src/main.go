@@ -286,7 +286,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 			return nil
 		},
 	}
-	pc, err := lc.ListenPacket(context.Background(), "udp", string(bindTo.Port()))
+	pc, err := lc.ListenPacket(context.Background(), "udp", fmt.Sprintf("%d",bindTo.Port()))
 	if err != nil {
 		return fmt.Errorf("Failed to listen on UDP: %w", err)
 	}
