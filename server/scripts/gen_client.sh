@@ -34,7 +34,7 @@ if [[ -z "$clientName" ]]; then
     exit 1
 fi
 
-curl --unix-socket $MANAGEMENT_SOCKET_PATH \
+id=$(curl --unix-socket $MANAGEMENT_SOCKET_PATH \
     -X POST \
     http://masqued/client?type=upsert \
     --data \
@@ -42,7 +42,7 @@ curl --unix-socket $MANAGEMENT_SOCKET_PATH \
 {
     "names": ["'"${clientName}"'"]
 }
-'
+' | jq .ids[0])
 
 genClientCert "$id" "$clientName"
 

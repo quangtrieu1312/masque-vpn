@@ -11,3 +11,4 @@ client/masque.conf
 **/.env
 **/keys.txt
 
+**/.vagrant/**

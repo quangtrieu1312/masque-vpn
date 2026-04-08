@@ -264,9 +264,37 @@ func htons(host uint16) uint16 {
 func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProtocol uint8) error {
     ctx, cancel := context.WithCancel(ctxt)
     defer cancel()
-    udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: bindTo.Addr().AsSlice(), Port: int(bindTo.Port())})
+	mark := 31289
+	lc := net.ListenConfig{
+		Control: func(network, addr string, c syscall.RawConn) error {
+			var soErr error
+			err := c.Control(func(fd uintptr) {
+				soErr = unix.SetsockoptInt(
+					int(fd),
+					unix.SOL_SOCKET, // level  : socket layer
+					unix.SO_MARK,    // optname: SO_MARK
+					mark,            // optval : 51820
+				)
+			})
+			if err != nil {
+				return fmt.Errorf("RawConn.Control: %w", err)
+			}
+			if soErr != nil {
+				return fmt.Errorf("setsockopt(SOL_SOCKET, SO_MARK, %d): %w"+
+					" — process needs CAP_NET_ADMIN", mark, soErr)
+			}
+			return nil
+		},
+	}
+	pc, err := lc.ListenPacket(context.Background(), "udp", bindTo.Addr().String())
 	if err != nil {
 		return fmt.Errorf("Failed to listen on UDP: %w", err)
+	}
+	pc.Close()
+ 
+	udpConn, ok := pc.(*net.UDPConn)
+	if !ok {
+		return fmt.Errorf("expected *net.UDPConn, got %T", pc)
 	}
 	defer udpConn.Close()
 
@@ -282,7 +310,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
     if err != nil {
         return fmt.Errorf("Cannot read client CA:", err)
 	}
-    ok := certPool.AppendCertsFromPEM(caCertPEM)
+    ok = certPool.AppendCertsFromPEM(caCertPEM)
     if !ok {
 		return fmt.Errorf("Invalid cert")
 	}

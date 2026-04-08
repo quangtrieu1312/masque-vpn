@@ -4,6 +4,8 @@ go 1.25.0
 
 require (
 	github.com/lib/pq v1.10.9
+	github.com/mattn/go-sqlite3 v1.14.33
+	github.com/praserx/ipconv v1.2.2
 	github.com/quic-go/connect-ip-go v0.1.0
 	github.com/quic-go/quic-go v0.53.0
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
@@ -21,8 +23,6 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
-	github.com/mattn/go-sqlite3 v1.14.33 // indirect
-	github.com/praserx/ipconv v1.2.2 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
 	go.uber.org/mock v0.5.0 // indirect

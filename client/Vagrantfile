@@ -1,0 +1,52 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "bento/ubuntu-24.04"
+  config.vm.box_version = "202508.03.0"
+    # libvirt provider configuration
+  config.vm.provider :libvirt do |libvirt|
+    # Connection URI - use qemu:///session for non-root, qemu:///system for root
+    libvirt.uri = "qemu:///system"
+
+    # VM name in libvirt
+    libvirt.default_prefix = "vagrant"
+
+    # CPU and memory
+    libvirt.cpus = 2
+    libvirt.memory = 2048
+
+    # CPU mode - 'host-passthrough' gives best performance
+    # but reduces live migration compatibility
+    libvirt.cpu_mode = "host-passthrough"
+
+    # Disk settings
+    libvirt.storage_pool_name = "default"
+
+    # Enable nested virtualization (if you need to run VMs inside this VM)
+    # libvirt.nested = true
+
+    # Graphics - disable for headless servers
+    libvirt.graphics_type = "none"
+
+    # Use virtio for better disk performance
+    libvirt.disk_bus = "virtio"
+    libvirt.disk_driver :cache => "writeback"
+
+    # Networking
+    libvirt.driver = "kvm"
+
+    # Storage volume type
+    libvirt.volume_cache = "writeback"
+  end
+
+  # Synced folders with libvirt require virtiofs or NFS
+  # VirtualBox shared folders don't work with libvirt
+  config.vm.synced_folder ".", "/vagrant", type: "nfs",
+    nfs_udp: false,
+    nfs_version: 4,
+    mount_options: ["rw", "vers=4", "tcp", "nolock"]
+
+  config.vm.provision "shell", inline: <<-SHELL
+    apt-get update
+    apt-get install -y curl git vim
+    echo "KVM-backed VM provisioned successfully"
+  SHELL
+end
