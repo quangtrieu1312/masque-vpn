@@ -28,9 +28,14 @@ function log {
     echo -e "$(date --rfc-3339 ns) genClientCert [$level]: $msg"
 }
 
+id=$1
+if [[ -z "$id" ]]; then
+    log "error" "usage: $0 [id] [name]"
+    exit 1
+fi
 clientName=$1
 if [[ -z "$clientName" ]]; then
-    log "error" "Must pass client name as the only parameter"
+    log "error" "usage: $0 [id] [name]"
     exit 1
 fi
 
@@ -44,15 +49,15 @@ if [[ ! -f $CLIENT_CA_DIR/certs/ca.cert.pem ]]; then
     exit 1
 else
     log "info" "Generating client cert"
-    mkdir -p "$clientName"
-    openssl req -new -newkey rsa:2048 -nodes -keyout $clientName/client.key -out $clientName/client.csr \
+    mkdir -p "$id"
+    openssl req -new -newkey rsa:2048 -nodes -keyout $id/client.key -out $id/client.csr \
         -config /opt/masqued/extras/peer-req.conf -extensions v3_ca \
         -subj "/C=US/ST=TX/L=Dallas/O=Masque Client/CN=$clientName"
-    openssl ca -in $clientName/client.csr -out $clientName/client.crt -config /opt/masqued/extras/peer-ca.conf -rand_serial -batch -notext
-    cat $CLIENT_CA_DIR/certs/ca.cert.pem >>$clientName/client.crt
-    ln -s $SERVER_CA_DIR/certs/ca.cert.pem $clientName/ca.crt
-    zip $clientName/bundle.zip $clientName/*.crt $clientName/*.key
-    log "info" "New cert id $randId has been created. Bundle available at $WORK_DIR/$clientName."
+    openssl ca -in $id/client.csr -out $id/client.crt -config /opt/masqued/extras/peer-ca.conf -rand_serial -batch -notext
+    cat $CLIENT_CA_DIR/certs/ca.cert.pem >>$id/client.crt
+    ln -s $SERVER_CA_DIR/certs/ca.cert.pem $id/ca.crt
+    zip $id/bundle.zip $id/*.crt $id/*.key
+    log "info" "New cert for client='$clientName', id='$id' has been created. Bundle available at $WORK_DIR/$clientName."
 fi
 log "info" "Done"
 popd >/dev/null
