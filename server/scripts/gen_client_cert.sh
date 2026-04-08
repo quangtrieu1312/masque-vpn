@@ -33,7 +33,7 @@ if [[ -z "$id" ]]; then
     log "error" "usage: $0 [id] [name]"
     exit 1
 fi
-clientName=$1
+clientName=$2
 if [[ -z "$clientName" ]]; then
     log "error" "usage: $0 [id] [name]"
     exit 1
