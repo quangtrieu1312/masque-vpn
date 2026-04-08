@@ -290,7 +290,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 	if err != nil {
 		return fmt.Errorf("Failed to listen on UDP: %w", err)
 	}
-	pc.Close()
+	defer pc.Close()
  
 	udpConn, ok := pc.(*net.UDPConn)
 	if !ok {
