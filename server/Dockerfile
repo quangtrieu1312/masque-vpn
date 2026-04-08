@@ -2,7 +2,7 @@ FROM ubuntu:24.04
 
 RUN apt-get update -y && apt upgrade -y
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        iproute2 iptables ethtool openssl sqlite3 curl jq
+        iproute2 iptables ethtool openssl sqlite3 curl jq zip
 
 COPY ./*.conf /opt/masqued/
 COPY extras /opt/masqued/extras
