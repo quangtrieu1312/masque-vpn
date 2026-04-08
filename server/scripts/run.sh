@@ -25,5 +25,6 @@ genClientCA
 
 log "info" "Running masque daemon"
 chmod +x $BASE/bin
+setcap cap_net_admin+ep $BASE/bin
 ln -s $BASE/bin /usr/sbin/masqued
 masqued
