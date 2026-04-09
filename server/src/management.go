@@ -339,7 +339,7 @@ func RunManagementService(ctx context.Context) {
                     return
                 }
                 _, err = service.UpsertRoles(ctx, body.Names)
-                if err != nil {
+                if err == nil {
                     w.WriteHeader(http.StatusOK)
                 } else {
                     w.WriteHeader(http.StatusBadRequest)
@@ -476,7 +476,7 @@ func RunManagementService(ctx context.Context) {
                     return
                 }
                 _, err = service.UpsertResources(ctx, body.Resources)
-                if err != nil {
+                if err == nil {
                     w.WriteHeader(http.StatusOK)
                 } else {
                     w.WriteHeader(http.StatusBadRequest)
