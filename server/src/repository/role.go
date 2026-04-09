@@ -187,3 +187,40 @@ func DeleteRoles(roleIDs []int64) (bool, error) {
     }
     return true, nil   
 }
+
+func GetClientRoles(clientID int64) (*[]domain.Role, error) {
+    tx, err := db.GetConnection().Begin()
+    if err != nil {
+        return nil, err
+    }
+    roles := []domain.Role{}
+
+    rows, err := tx.Query(`
+        SELECT r.id, r.name
+		FROM clients_roles as cr
+		JOIN roles as r
+		ON cr.role_id = r.id
+        WHERE cr.client_id = ?`, clientID)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+    for rows.Next() {
+        r := domain.Role{}
+	    err := rows.Scan(&r.ID, &r.Name)
+	    if err != nil {
+		    return nil, err
+	    }
+        roles = append(roles, r)
+    }
+    err = rows.Err()
+    if err != nil {
+	    return nil, err
+    }
+
+    err = tx.Commit()
+    if err != nil {
+        return nil, err
+    }
+    return &roles, nil
+}

@@ -27,3 +27,6 @@ func UpsertRoles(ctx context.Context, roleNames []string) (*[]int64, error) {
 func DeleteRoles(ctx context.Context, roleIDs []int64) (bool, error) {
     return repository.DeleteRoles(roleIDs)
 }
+func GetClientRoles(ctx context.Context, clientID int64) (*[]domain.Role, error) {
+	return repository.GetClientRoles(clientID);
+}

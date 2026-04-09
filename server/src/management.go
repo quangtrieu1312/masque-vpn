@@ -64,6 +64,10 @@ type FetchClientResourcesRequest struct {
     ClientID int64 `json:"client_id"`
 }
 
+type FetchClientRolesRequest struct {
+    ClientID int64 `json:"client_id"`
+}
+
 type UpdateRoleNameRequest struct {
     Name string `json:"name"`
 }
@@ -200,7 +204,6 @@ func RunManagementService(ctx context.Context) {
                         w.WriteHeader(http.StatusInternalServerError)
                     } else {
                         w.Write(jsonBytes)
-                        w.WriteHeader(http.StatusOK)
                     }
                 } else {
                     if err != nil {
@@ -349,6 +352,28 @@ func RunManagementService(ctx context.Context) {
                 } else {
                 	logger.Debug(fmt.Sprintf("Cannot upsert role: %v", err))
                     w.WriteHeader(http.StatusBadRequest)
+                }
+                break
+            case "client":
+                var body FetchClientRolesRequest
+                err := json.NewDecoder(r.Body).Decode(&body)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("Invalid POST /role: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                    return
+                }
+                data, err := service.GetClientRoles(ctx, body.ClientID)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("POST /role error: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                } else {
+                    jsonBytes, err := json.Marshal(*data)
+                    if err != nil {
+                        logger.Debug(fmt.Sprintf("Cannot marshal role data to json: %v", err))
+                        w.WriteHeader(http.StatusInternalServerError)
+                    } else {
+                        w.Write(jsonBytes)
+                    }
                 }
                 break
             case "assign":
