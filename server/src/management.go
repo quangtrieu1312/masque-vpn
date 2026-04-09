@@ -168,8 +168,30 @@ func RunManagementService(ctx context.Context) {
                     return
                 }
                 clientIDs, _ := service.UpsertClients(ctx, body.Names)
-                if err == nil && clientIDs != nil {
-                    responseBody := UpsertClientsResponse{*clientIDs}
+                if err == nil && clientIDs != nil && len(*clientIDs)==len(body.Names) {
+					for i, v := range body.Names {
+						tmp1:=[]int64{}
+						tmp2 :=[]int64{}
+						roleIDs, e := service.UpsertRoles(ctx, append([]string{}, v))
+						if e != nil {
+							err = e
+							break
+						} else {
+							tmp1 = append(tmp1, (*roleIDs)[0])
+							tmp2 = append(tmp2, (*clientIDs)[i])
+							_, e := service.AssignRolesToClients(ctx, tmp1, tmp2)
+							if e != nil {
+								err = e
+								break
+							}
+						}
+					}
+                    if err != nil {
+                        logger.Debug(fmt.Sprintf("Cannot upsert or assign roles to new clients: %v", err))
+                        w.WriteHeader(http.StatusInternalServerError)
+						return
+					}
+					responseBody := UpsertClientsResponse{*clientIDs}
                     jsonBytes, err := json.Marshal(responseBody)
                     if err != nil {
                         logger.Debug(fmt.Sprintf("Cannot marshal clientIDs to json: %v", err))
@@ -315,8 +337,8 @@ func RunManagementService(ctx context.Context) {
                     w.WriteHeader(http.StatusBadRequest)
                     return
                 }
-                ok, _ := service.UpsertRoles(ctx, body.Names)
-                if ok {
+                _, err = service.UpsertRoles(ctx, body.Names)
+                if err != nil {
                     w.WriteHeader(http.StatusOK)
                 } else {
                     w.WriteHeader(http.StatusBadRequest)
@@ -452,8 +474,8 @@ func RunManagementService(ctx context.Context) {
                     w.WriteHeader(http.StatusBadRequest)
                     return
                 }
-                ok, _ := service.UpsertResources(ctx, &body.Resources)
-                if ok {
+                _, err = service.UpsertResources(ctx, &body.Resources)
+                if err != nil {
                     w.WriteHeader(http.StatusOK)
                 } else {
                     w.WriteHeader(http.StatusBadRequest)

@@ -15,7 +15,7 @@ func GetResourceByID(ctx context.Context, resourceID int64) (*domain.Resource, e
 func GetClientResources(ctx context.Context, clientID int64) (*[]domain.Resource, error) {
     return repository.GetClientResources(clientID)
 }
-func UpsertResources(ctx context.Context, resources *[]domain.Resource) (bool, error) {
+func UpsertResources(ctx context.Context, resources *[]domain.Resource) (*[]int64, error) {
     return repository.UpsertResources(resources)
 }
 func UpdateResourceName(ctx context.Context, resourceID int64, newName string) (bool, error) {

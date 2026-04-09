@@ -13,14 +13,20 @@ func GetClientByID(ctx context.Context, id int64) (*domain.Client, error) {
     return repository.GetClientByID(id)
 }
 func UpsertClients(ctx context.Context, clientNames []string) (*[]int64, error) {
-    return repository.UpsertClients(clientNames)
+	ret, err:= repository.UpsertClients(clientNames)
+	if err != nil {
+		return nil, err
+	}
+	return ret, nil
 }
 func AssignIPToClient(ctx context.Context, clientID int64) (string, error) { 
     return repository.AssignIPToClient(clientID)
 }
+
 func DeleteClients(ctx context.Context, clientIDs []int64) (bool, error) {
     return repository.DeleteClients(clientIDs)
 }
+
 func UnassignRolesToClients(ctx context.Context, roleIDs []int64, clientIDs []int64) (bool, error) {
     return repository.UnassignRolesToClients(roleIDs, clientIDs)
 }

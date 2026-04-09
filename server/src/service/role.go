@@ -21,7 +21,7 @@ func UnassignResourcesToRoles(ctx context.Context, resourceIDs []int64, roleIDs 
 func UpdateRoleName(ctx context.Context, roleID int64, newName string) (bool, error) {
     return repository.UpdateRoleName(roleID, newName)
 }
-func UpsertRoles(ctx context.Context, roleNames []string) (bool, error) {
+func UpsertRoles(ctx context.Context, roleNames []string) (*[]int64, error) {
     return repository.UpsertRoles(roleNames)
 }
 func DeleteRoles(ctx context.Context, roleIDs []int64) (bool, error) {

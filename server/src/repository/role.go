@@ -134,10 +134,10 @@ func UpdateRoleName(roleID int64, newName string) (bool, error) {
     return true, nil
 }
 
-func UpsertRoles(roleNames []string) (bool, error) {
+func UpsertRoles(roleNames []string) (*[]int64, error) {
     tx, err := db.GetConnection().Begin()
     if err != nil {
-        return false, err
+        return nil, err
     }
     stmt, err := tx.Prepare(`
         INSERT INTO roles(name)
@@ -146,22 +146,23 @@ func UpsertRoles(roleNames []string) (bool, error) {
         DO NOTHING
         `)
     if err != nil {
-	    return false, err
+	    return nil, err
     }
     defer stmt.Close()
-
+	roleIDs := []int64{}
     for _, role := range(roleNames) {
-        _, err = stmt.Exec(role)
-
+		result, err := stmt.Exec(role)
+        id, err := result.LastInsertId()
         if err != nil {
-	        return false, err
+	        return nil, err
         }
+		roleIDs = append(roleIDs, id)
     }
     err = tx.Commit()
     if err != nil {
-        return false, err
+        return nil, err
     }
-    return true, nil
+    return &roleIDs, nil
 }
 
 func DeleteRoles(roleIDs []int64) (bool, error) {

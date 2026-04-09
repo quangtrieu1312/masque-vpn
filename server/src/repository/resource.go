@@ -95,10 +95,10 @@ func GetClientResources(clientID int64) (*[]domain.Resource, error) {
     return &resources, nil
 }
 
-func UpsertResources(resources *[]domain.Resource) (bool, error) {
+func UpsertResources(resources *[]domain.Resource) (*[]int64, error) {
     tx, err := db.GetConnection().Begin()
     if err != nil {
-        return false, err
+        return nil, err
     }
     stmt, err := tx.Prepare(`
         INSERT INTO resources(name, value)
@@ -107,22 +107,25 @@ func UpsertResources(resources *[]domain.Resource) (bool, error) {
         DO UPDATE SET value = ?
         `)
     if err != nil {
-	    return false, err
+	    return nil, err
     }
     defer stmt.Close()
 
+    resourceIDs := []int64{}
     for _, resource := range(*resources) {
-        _, err = stmt.Exec(resource.Name, resource.Value)
+		result, err := stmt.Exec(resource.Name, resource.Value)
+        id, err := result.LastInsertId()
 
         if err != nil {
-	        return false, err
+	        return nil, err
         }
+        resourceIDs = append(resourceIDs, id) 
     }
     err = tx.Commit()
     if err != nil {
-        return false, err
+        return nil, err
     }
-    return true, nil
+    return &resourceIDs, nil
 }
 
 func UpdateResourceName(resourceID int64, newName string) (bool, error) {
