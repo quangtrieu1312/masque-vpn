@@ -73,7 +73,7 @@ type DeleteResourcesRequest struct {
 }
 
 type UpsertResourcesRequest struct {
-    Resources []domain.Resource `json:"names"`
+    Resources []domain.Resource `json:"resources"`
 }
 
 type UpdateResourceNameRequest struct {
