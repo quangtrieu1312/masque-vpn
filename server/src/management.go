@@ -126,6 +126,7 @@ func RunManagementService(ctx context.Context) {
             if ok {
                 w.WriteHeader(http.StatusOK)
             } else {
+                logger.Debug(fmt.Sprintf("Cannot update client name: %v", err))
                 w.WriteHeader(http.StatusBadRequest)
             }
             break
@@ -216,10 +217,11 @@ func RunManagementService(ctx context.Context) {
                     w.WriteHeader(http.StatusBadRequest)
                     return
                 }
-                ok, _ := service.AssignRolesToClients(ctx, body.RoleIDs, body.ClientIDs)
+                ok, err := service.AssignRolesToClients(ctx, body.RoleIDs, body.ClientIDs)
                 if ok {
                     w.WriteHeader(http.StatusOK)
                 } else {
+                	logger.Debug(fmt.Sprintf("Cannot assign role to client: %v", err))
                     w.WriteHeader(http.StatusBadRequest)
                 }
                 break
@@ -231,10 +233,11 @@ func RunManagementService(ctx context.Context) {
                     w.WriteHeader(http.StatusBadRequest)
                     return
                 }
-                ok, _ := service.AssignRolesToClients(ctx, body.RoleIDs, body.ClientIDs)
+                ok, err := service.UnassignRolesToClients(ctx, body.RoleIDs, body.ClientIDs)
                 if ok {
                     w.WriteHeader(http.StatusOK)
                 } else {
+                	logger.Debug(fmt.Sprintf("Cannot unassign role to client: %v", err))
                     w.WriteHeader(http.StatusBadRequest)
                 }
                 break
@@ -254,6 +257,7 @@ func RunManagementService(ctx context.Context) {
             if ok {
                 w.WriteHeader(http.StatusOK)
             } else {
+                logger.Debug(fmt.Sprintf("Cannot delete client: %v", err))
                 w.WriteHeader(http.StatusBadRequest)
             }
             break
@@ -293,10 +297,11 @@ func RunManagementService(ctx context.Context) {
                 w.WriteHeader(http.StatusBadRequest)
                 return
             }
-            ok, _ := service.UpdateRoleName(ctx, id, body.Name)
+            ok, err := service.UpdateRoleName(ctx, id, body.Name)
             if ok {
                 w.WriteHeader(http.StatusOK)
             } else {
+                logger.Debug(fmt.Sprintf("Cannot update role name: %v", err))
                 w.WriteHeader(http.StatusBadRequest)
             }
             break
@@ -342,6 +347,7 @@ func RunManagementService(ctx context.Context) {
                 if err == nil {
                     w.WriteHeader(http.StatusOK)
                 } else {
+                	logger.Debug(fmt.Sprintf("Cannot upsert role: %v", err))
                     w.WriteHeader(http.StatusBadRequest)
                 }
                 break
@@ -353,10 +359,11 @@ func RunManagementService(ctx context.Context) {
                     w.WriteHeader(http.StatusBadRequest)
                     return
                 }
-                ok, _ := service.AssignResourcesToRoles(ctx, body.ResourceIDs, body.RoleIDs)
+                ok, err := service.AssignResourcesToRoles(ctx, body.ResourceIDs, body.RoleIDs)
                 if ok {
                     w.WriteHeader(http.StatusOK)
                 } else {
+                	logger.Debug(fmt.Sprintf("Cannot assign resource to role: %v", err))
                     w.WriteHeader(http.StatusBadRequest)
                 }
                 break
@@ -368,10 +375,11 @@ func RunManagementService(ctx context.Context) {
                     w.WriteHeader(http.StatusBadRequest)
                     return
                 }
-                ok, _ := service.UnassignResourcesToRoles(ctx, body.ResourceIDs, body.RoleIDs)
+                ok, err := service.UnassignResourcesToRoles(ctx, body.ResourceIDs, body.RoleIDs)
                 if ok {
                     w.WriteHeader(http.StatusOK)
                 } else {
+                	logger.Debug(fmt.Sprintf("Cannot unassign resource to role: %v", err))
                     w.WriteHeader(http.StatusBadRequest)
                 }
                 break
@@ -387,10 +395,11 @@ func RunManagementService(ctx context.Context) {
                 w.WriteHeader(http.StatusBadRequest)
                 return
             }
-            ok, _ := service.DeleteRoles(ctx,body.IDs)
+            ok, err := service.DeleteRoles(ctx,body.IDs)
             if ok {
                 w.WriteHeader(http.StatusOK)
             } else {
+                logger.Debug(fmt.Sprintf("Cannot delete role: %v", err))
                 w.WriteHeader(http.StatusBadRequest)
             }
             break
@@ -430,10 +439,11 @@ func RunManagementService(ctx context.Context) {
                 w.WriteHeader(http.StatusBadRequest)
                 return
             }
-            ok, _ := service.UpdateResourceName(ctx, id, body.Name)
+            ok, err := service.UpdateResourceName(ctx, id, body.Name)
             if ok {
                 w.WriteHeader(http.StatusOK)
             } else {
+                logger.Debug(fmt.Sprintf("Cannot update resource name: %v", err))
                 w.WriteHeader(http.StatusBadRequest)
             }
             break
@@ -479,6 +489,7 @@ func RunManagementService(ctx context.Context) {
                 if err == nil {
                     w.WriteHeader(http.StatusOK)
                 } else {
+                	logger.Debug(fmt.Sprintf("Cannot upsert resource: %v", err))
                     w.WriteHeader(http.StatusBadRequest)
                 }
                 break
@@ -516,10 +527,11 @@ func RunManagementService(ctx context.Context) {
                 w.WriteHeader(http.StatusBadRequest)
                 return
             }
-            ok, _ := service.DeleteResources(ctx,body.IDs)
+            ok, err := service.DeleteResources(ctx,body.IDs)
             if ok {
                 w.WriteHeader(http.StatusOK)
             } else {
+                logger.Debug(fmt.Sprintf("Cannot delete resource: %v", err))
                 w.WriteHeader(http.StatusBadRequest)
             }
             break
@@ -553,10 +565,11 @@ func RunManagementService(ctx context.Context) {
                 w.WriteHeader(http.StatusBadRequest)
                 return
             }
-            ok, _ := service.ResetDHCP(ctx, body.FirstIP, body.LastIP)
+            ok, err := service.ResetDHCP(ctx, body.FirstIP, body.LastIP)
             if ok {
                 w.WriteHeader(http.StatusOK)
             } else {
+                logger.Debug(fmt.Sprintf("Cannot reset DHCP: %v", err))
                 w.WriteHeader(http.StatusBadRequest)
             }
             break
