@@ -72,8 +72,13 @@ type DeleteResourcesRequest struct {
     IDs []int64 `json:"ids"`
 }
 
+type ResourceRequest struct {
+	Name string `json:"name"`
+	Value string `json:"value"`
+}
+
 type UpsertResourcesRequest struct {
-    Resources []domain.Resource `json:"resources"`
+    Resources []ResourceRequest `json:"resources"`
 }
 
 type UpdateResourceNameRequest struct {
