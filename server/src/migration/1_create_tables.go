@@ -62,6 +62,7 @@ func (m Migration1) Run(ctx context.Context) int {
             id integer PRIMARY KEY,
             client_id integer NOT NULL,
             role_id integer NOT NULL,
+			CONSTRAINT compount_unique UNIQUE (client_id, role_id),
             CONSTRAINT fk_client FOREIGN KEY (client_id)
             REFERENCES clients(id) ON DELETE CASCADE,
             CONSTRAINT fk_role FOREIGN KEY (role_id)
