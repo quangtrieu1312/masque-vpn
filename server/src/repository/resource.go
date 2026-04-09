@@ -7,12 +7,9 @@ import (
 	"github.com/quangtrieu1312/masque-vpn/server/db"
 	"github.com/quangtrieu1312/masque-vpn/server/domain"
 	"github.com/quangtrieu1312/masque-vpn/server/utility"
+	"github.com/quangtrieu1312/masque-vpn/server/request"
 )
 
-type ResourceRequest struct {
-	Name string
-	Value string
-}
 
 func GetAllResources() (*[]domain.Resource, error) {
     tx, err := db.GetConnection().Begin()
@@ -100,7 +97,7 @@ func GetClientResources(clientID int64) (*[]domain.Resource, error) {
     return &resources, nil
 }
 
-func UpsertResources(resources []ResourceRequest) (*[]int64, error) {
+func UpsertResources(resources []request.ResourceRequest) (*[]int64, error) {
     tx, err := db.GetConnection().Begin()
     if err != nil {
         return nil, err

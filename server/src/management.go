@@ -11,7 +11,7 @@ import (
 
 	"github.com/quangtrieu1312/masque-vpn/server/constants"
 	"github.com/quangtrieu1312/masque-vpn/server/logger"
-	"github.com/quangtrieu1312/masque-vpn/server/domain"
+	"github.com/quangtrieu1312/masque-vpn/server/request"
 	"github.com/quangtrieu1312/masque-vpn/server/service"
 )
 
@@ -72,13 +72,8 @@ type DeleteResourcesRequest struct {
     IDs []int64 `json:"ids"`
 }
 
-type ResourceRequest struct {
-	Name string `json:"name"`
-	Value string `json:"value"`
-}
-
 type UpsertResourcesRequest struct {
-    Resources []ResourceRequest `json:"resources"`
+    Resources []request.ResourceRequest `json:"resources"`
 }
 
 type UpdateResourceNameRequest struct {
@@ -480,7 +475,7 @@ func RunManagementService(ctx context.Context) {
                     w.WriteHeader(http.StatusBadRequest)
                     return
                 }
-                _, err = service.UpsertResources(ctx, &body.Resources)
+                _, err = service.UpsertResources(ctx, body.Resources)
                 if err != nil {
                     w.WriteHeader(http.StatusOK)
                 } else {
