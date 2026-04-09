@@ -174,16 +174,16 @@ func RunManagementService(ctx context.Context) {
 						tmp2 :=[]int64{}
 						roleIDs, e := service.UpsertRoles(ctx, append([]string{}, v))
 						if e != nil {
-                        	logger.Debug(fmt.Sprintf("Cannot upsert role for new client %v: %v", body.Names[i], err))
 							err = e
+                        	logger.Debug(fmt.Sprintf("Cannot upsert role for new client %v: %v", body.Names[i], err))
 							break
 						} else {
 							tmp1 = append(tmp1, (*roleIDs)[0])
 							tmp2 = append(tmp2, (*clientIDs)[i])
 							_, e := service.AssignRolesToClients(ctx, tmp1, tmp2)
 							if e != nil {
-                        		logger.Debug(fmt.Sprintf("Cannot assign default role for new client %v: %v", body.Names[i], err))
 								err = e
+                        		logger.Debug(fmt.Sprintf("Cannot assign role %v for new client %v: %v", tmp1, tmp2, err))
 								break
 							}
 						}
