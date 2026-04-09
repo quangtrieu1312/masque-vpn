@@ -71,6 +71,7 @@ func (m Migration1) Run(ctx context.Context) int {
             id integer PRIMARY KEY,
             role_id integer NOT NULL,
             resource_id integer NOT NULL,
+			CONSTRAINT compount_unique UNIQUE (role_id, resource_id),
             CONSTRAINT fk_role FOREIGN KEY (role_id)
             REFERENCES roles(id) ON DELETE CASCADE,
             CONSTRAINT fk_resource FOREIGN KEY (resource_id)

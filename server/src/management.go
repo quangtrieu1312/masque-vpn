@@ -167,7 +167,7 @@ func RunManagementService(ctx context.Context) {
                     w.WriteHeader(http.StatusBadRequest)
                     return
                 }
-                clientIDs, _ := service.UpsertClients(ctx, body.Names)
+                clientIDs, err := service.UpsertClients(ctx, body.Names)
                 if err == nil && clientIDs != nil && len(*clientIDs)==len(body.Names) {
 					for i, v := range body.Names {
 						tmp1:=[]int64{}
