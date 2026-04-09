@@ -51,7 +51,8 @@ else
     log "info" "Generating client cert"
     mkdir -p "$clientName"
     cd $clientName
-    openssl req -new -newkey rsa:2048 -nodes -keyout client.key -out client.csr \
+    openssl genpkey -algorithm Ed25519 -out client.key
+    openssl req -new -key client.key -out client.csr \
         -config /opt/masqued/extras/peer-req.conf -extensions v3_ca \
         -subj "/C=US/ST=TX/L=Dallas/O=Masque Client/CN=$id"
     openssl ca -in client.csr -out client.crt -config /opt/masqued/extras/peer-ca.conf -rand_serial -batch -notext

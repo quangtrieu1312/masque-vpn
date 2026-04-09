@@ -76,7 +76,7 @@ if [[ ! -f $WORK_DIR/private/ca.key.pem ]] || [[ $FORCEUPDATE -eq 1 ]]; then
     rm -rf ./*
     mkdir -p ./private ./certs ./crl ./newcerts
     touch ./index.txt ./serial
-    openssl genrsa -out private/ca.key.pem 4096
+    openssl genpkey -algorithm Ed25519 -out private/ca.key.pem
     openssl req -config /opt/masqued/extras/ca-req.conf -key private/ca.key.pem -new -x509 \
         -sha256 -extensions v3_ca -out certs/ca.cert.pem \
         -subj "/C=$C/ST=$ST/L=$L/O=$O/OU=$OU/CN=$CN" \
