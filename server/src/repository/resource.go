@@ -116,6 +116,9 @@ func UpsertResources(resources []request.ResourceRequest) (*[]int64, error) {
     resourceIDs := []int64{}
     for _, resource := range(resources) {
 		result, err := stmt.Exec(resource.Name, resource.Value)
+        if err != nil {
+	        return nil, err
+        }
         id, err := result.LastInsertId()
 
         if err != nil {
