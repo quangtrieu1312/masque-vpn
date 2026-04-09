@@ -7,7 +7,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.33
 	github.com/praserx/ipconv v1.2.2
 	github.com/quic-go/connect-ip-go v0.1.0
-	github.com/quic-go/quic-go v0.53.0
+	github.com/quic-go/quic-go v0.59.0
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/vishvananda/netlink v1.3.0
 	github.com/yosida95/uritemplate/v3 v3.0.2
@@ -23,9 +23,9 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
-	github.com/quic-go/qpack v0.5.1 // indirect
+	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
-	go.uber.org/mock v0.5.0 // indirect
+	go.uber.org/mock v0.5.2 // indirect
 	golang.org/x/crypto v0.47.0 // indirect
 	golang.org/x/mod v0.31.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
