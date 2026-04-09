@@ -120,10 +120,12 @@ else
         sans="subjectAltName = ${sans}"
         printf '%s\n' "$sans" >> $tempConf
     fi
-    openssl req -new -newkey rsa:2048 -nodes -keyout server.key -out server.csr \
+    openssl genpkey -algorithm Ed25519 -out server.key
+    openssl req -new -key server.key -out server.csr \
         -config $tempConf -reqexts v3_ca \
         -subj "/C=$C/ST=$ST/L=$L/O=$O/OU=$OU/CN=$CN"
     openssl ca -in ./server.csr -out ./server.crt -config /opt/masqued/extras/self-ca.conf -rand_serial -batch -notext
+    cat $SERVER_CA_DIR/certs/ca.cert.pem >>./server.crt
 fi
 log "info" "Done"
 popd >/dev/null
