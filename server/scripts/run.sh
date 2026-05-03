@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-source /opt/masqued/scripts/helper.sh
-source /opt/masqued/masqued.conf
+source /etc/masqued/scripts/helper.sh
+source /etc/masqued/masqued.conf
 function log {
     level=$(echo $1 | tr '[a-z]' '[A-Z]')
     msg=$2

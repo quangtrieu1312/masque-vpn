@@ -1,6 +1,6 @@
 package constants
 
-const WORK_DIR = "/opt/masqued"
+const WORK_DIR = "/etc/masqued"
 const CA_DIR = WORK_DIR + "/ca"
 const CERT_DIR = WORK_DIR + "/certs"
 const SCRIPT_DIR = WORK_DIR + "/scripts"

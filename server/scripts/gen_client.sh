@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-source /opt/masqued/scripts/helper.sh
+source /etc/masqued/scripts/helper.sh
 
 POSITIONAL_ARGS=()
 FORCEUPDATE=0

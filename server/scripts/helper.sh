@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-BASE="/opt/masqued"
+BASE="/etc/masqued"
 CA_DIR=$BASE/ca
 CERT_DIR=$BASE/certs
 SCRIPT_DIR=$BASE/scripts

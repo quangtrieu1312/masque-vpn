@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-source /opt/masqued/scripts/helper.sh
+source /etc/masqued/scripts/helper.sh
 
 POSITIONAL_ARGS=()
 FORCEUPDATE=0
@@ -53,9 +53,9 @@ else
     cd $clientName
     openssl genpkey -algorithm Ed25519 -out client.key
     openssl req -new -key client.key -out client.csr \
-        -config /opt/masqued/extras/peer-req.conf -extensions v3_ca \
+        -config /etc/masqued/extras/peer-req.conf -extensions v3_ca \
         -subj "/C=US/ST=TX/L=Dallas/O=Masque Client/CN=$id"
-    openssl ca -in client.csr -out client.crt -config /opt/masqued/extras/peer-ca.conf -rand_serial -batch -notext
+    openssl ca -in client.csr -out client.crt -config /etc/masqued/extras/peer-ca.conf -rand_serial -batch -notext
     cat $CLIENT_CA_DIR/certs/ca.cert.pem >>client.crt
     ln -s $SERVER_CA_DIR/certs/ca.cert.pem ca.crt
     zip bundle.zip *.crt *.key

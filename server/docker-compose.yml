@@ -10,10 +10,10 @@ services:
     ports:
       - 443:443/udp
     volumes:
-      - ./certs:/opt/masqued/certs
-      - ./ca:/opt/masqued/ca
-      - ./masqued.conf:/opt/masqued/masqued.conf
-      - db:/opt/masqued/data
+      - ./certs:/etc/masqued/certs
+      - ./ca:/etc/masqued/ca
+      - ./masqued.conf:/etc/masqued/masqued.conf
+      - db:/etc/masqued/data
     command: /run.sh
 volumes:
     db:

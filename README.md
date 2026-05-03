@@ -1,67 +1,303 @@
-# ABOUT
-MASQUE is a tunneling protocol that runs on top of HTTP3/QUIC
+# masque-vpn
 
-The current implementation support IP over HTTP
+A VPN implementation built on top of the [MASQUE](https://ietf-wg-masque.github.io/) protocol — IP tunneling over HTTP/3 and QUIC. The server supports multiple simultaneous clients with per-client IP assignment, role-based access control, and a Unix socket management API.
 
-# HOW TO RUN
-## Server
-Step 1: create an `.env` file
+---
 
-| Variable name | Required | Description   | Default value | Example |
-| ------------- | -------- | ------------- | ------------- | ------- |
-| LOG_LEVEL | Yes | The verbosity for logs | N/A | info |
-| WAN_INTERFACE | Yes | WAN interface of the server | N/A | eth0 |
-| BIND_ADDR | Yes | Bind address for QUIC server | N/A | 0.0.0.0 |
-| LISTEN_PORT | Yes | Bind port for QUIC server | N/A | 443 |
-| VIRTUAL_IP | Yes | Server address for VPN interface | N/A | 10.1.0.1/31 |
-| CLIENT_CIDR | Yes | Client addresses for VPN interface | N/A | 10.2.0.1/16 |
-| CLIENT_ROUTE | Yes | Client traffic for this route go through VPN tunnel | N/A | 8.8.4.4/32 |
-| FILTER_IP_PROTOCOL | Yes | Protocol number that VPN server allows, `0` means all | N/A | 0 |
-| QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING | Yes | Not sure what it does, but this is for a library | N/A | true |
-| QUIC_GO_DISABLE_GSO | Yes | Same as the above | N/A | true |
-| SERVER_CA_DIR | Yes | Server CA directory | N/A | /ca/server |
-| CLIENT_CA_DIR | Yes | Client CA directory | N/A | /ca/client |
-| SERVER_CERT_DIR | Yes | Server certs directory | N/A | /certs/server |
-| CLIENT_CERT_DIR | Yes | Client certs directory | N/A | /certs/client |
-| SAN_DNS_LIST | Yes | x509 dns SAN for server cert | N/A | example.com,*.example.com |
-| SAN_IP_LIST | Yes | x509 ip SAN for server cert | N/A | 1.1.1.1,8.8.4.4,8.8.8.8 |
+## How it works
 
-Step 2: Start the service
-`sudo docker compose up --build -d`
+```
+Client                         Server
+  │                              │
+  │── QUIC (UDP/443) ──────────► │
+  │   HTTP/3 CONNECT-IP          │
+  │   mTLS (Ed25519)             │
+  │◄─ IP prefix assigned ────── │
+  │◄─ routes advertised ─────── │
+  │                           TUN device
+  │                           raw socket → WAN
+```
 
-## Client
-### Linux
-Step 1: Create local folder `/etc/masque/certs` and `/etc/masque/logs`
+The client establishes a QUIC connection to the server, upgrades it to an HTTP/3 `CONNECT-IP` session, and receives a `/32` IP address and a set of routes from the server. The server creates a TUN device and multiplexes packets from all connected clients using a per-client channel map keyed by assigned IP.
 
-Step 2: Copy `client/config/masque0.conf.template` to `/etc/masque/masque0.conf`
+Client identity is derived from the **Common Name** of the client's mTLS certificate, which is set to the client's database ID at cert generation time. This is how the server looks up per-client routes at connection time.
 
-| Variable name | Required | Description   | Default value | Example |
-| ------------- | -------- | ------------- | ------------- | ------- |
-| LOG_LEVEL | Yes | Verbosity for logs | N/A | info |
-| LOG_PATH | Yes | Log path | N/A | /etc/masque/logs/masque.log |
-| ENABLE_KEY_LOG | Yes | Log TLS key for decryption | N/A | false |
-| KEY_LOG_PATH | Yes | Path for TLS key | N/A | /tmp/masque_keylog.txt |
-| SERVER | Yes | MASQUE server in format `FQDN[:port]`, by default port is `443` | N/A | 1.2.3.4:567 |
-| SERVER_CA_PATH | Yes | Path to server CA | N/A | /etc/masque/certs/ca.crt |
-| CLIENT_CERT_PATH | Yes | Path to client cert | N/A | /etc/masque/certs/client.crt |
-| CLIENT_KEY_PATH | Yes | Path to client key | N/A | /etc/masque/certs/client.key |
-| BIDIRECTION | No | TBD | N/A | false |
-| BIDIRECTION_ALLOW_SOURCE | No | TBD | N/A | 1.1.1.1/8,10.10.10.10/20 |
-| BIDIRECTION_ALLOW_DEST | No | TBD | N/A | 1.1.1.1/8,10.10.10.10/20 |
+---
+
+## Repository layout
+
+```
+masque-vpn/
+├── client/
+│   ├── src/                    # Go source (main.go, logger.go, ip.go, rand.go)
+│   ├── masque.conf.template    # Client config template
+│   ├── Dockerfile              # Runtime image
+│   ├── Dockerfile.build        # Build-only image (golang:tip-alpine3.22)
+│   ├── docker-compose.yml      # Example multi-client compose file
+│   └── build.sh                # Local Docker-based build script
+│
+└── server/
+    ├── src/                    # Go source
+    │   ├── main.go             # Server entrypoint, QUIC listener, TUN device
+    │   ├── management.go       # Unix socket HTTP management API
+    │   ├── config/             # Config file loader
+    │   ├── constants/          # Compile-time path constants
+    │   ├── db/                 # SQLite connection
+    │   ├── domain/             # Data models (Client, Role, Resource, DHCP)
+    │   ├── migration/          # Schema migrations
+    │   ├── repository/         # SQL queries
+    │   ├── service/            # Business logic
+    │   └── utility/            # IP math, raw socket helpers
+    ├── scripts/
+    │   ├── run.sh              # Container entrypoint (bootstrap + start)
+    │   ├── gen_client.sh       # Create a named client + generate its cert
+    │   ├── gen_client_cert.sh  # Generate Ed25519 cert for a client
+    │   ├── gen_client_CA.sh    # Bootstrap the client CA
+    │   ├── gen_server_cert.sh  # Generate server TLS cert
+    │   ├── gen_server_CA.sh    # Bootstrap the server CA
+    │   ├── bootstrap/          # ip_forward + rp_filter setup
+    │   ├── postup/             # SNAT rules applied after VPN comes up
+    │   └── predown/            # SNAT rule teardown before shutdown
+    ├── extras/                 # OpenSSL .conf files for CA and cert requests
+    ├── masqued.conf.template   # Server config template
+    └── docker-compose.yml
+```
+
+---
+
+## Requirements
+
+**Server:** Linux, Docker, `NET_ADMIN` + `NET_RAW` capabilities, `/dev/net/tun`
+
+**Client:** Linux (kernel TUN support), `NET_ADMIN` + `NET_RAW` capabilities
+
+**Toolchain (build only):** Go 1.25+ (`golang:tip-alpine3.22` Docker image)
+
+---
+
+## Server setup
+
+### 1. Prepare config
+
+Copy the template and fill in your values:
+
+```sh
+cp server/masqued.conf.template server/masqued.conf
+```
+
+| Key | Required | Description | Example |
+|-----|----------|-------------|---------|
+| `LOG_LEVEL` | yes | Verbosity: `fatal`, `error`, `warn`, `info`, `debug`, `trace` | `info` |
+| `LOG_PATH` | yes | Log file path | `/etc/masqued/log` |
+| `WAN_INTERFACE` | yes | Host's WAN interface name | `eth0` |
+| `BIND_ADDR` | yes | QUIC listener bind address | `0.0.0.0` |
+| `LISTEN_PORT` | yes | QUIC listener port | `443` |
+| `TUNNEL_IP` | yes | Server-side VPN tunnel IP (CIDR) | `10.76.0.1/31` |
+| `TUNNEL_MTU` | no | TUN device MTU (default: 1416) | `1416` |
+| `CLIENT_CIDR` | yes | DHCP pool for client IPs | `10.77.0.1/16` |
+| `FILTER_IP_PROTOCOL` | yes | IP protocol filter (`0` = all) | `0` |
+| `QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING` | yes | Suppress quic-go buffer warning | `true` |
+| `QUIC_GO_DISABLE_GSO` | yes | Disable Generic Segmentation Offload | `true` |
+| `SAN_DNS_LIST` | yes | Comma-separated DNS SANs for server cert | `vpn.example.com,*.example.com` |
+| `SAN_IP_LIST` | yes | Comma-separated IP SANs for server cert | `1.2.3.4` |
+
+### 2. Start the server
+
+```sh
+cd server
+sudo docker compose up --build -d
+```
+
+On first boot, `run.sh` automatically:
+1. Generates the server CA and server TLS certificate (Ed25519)
+2. Generates the client CA
+3. Runs database migrations (SQLite, schema v1)
+4. Enables IP forwarding and disables reverse-path filtering
+5. Starts the MASQUE daemon and the management Unix socket
+
+---
+
+## Client setup
+
+### 1. Provision a client on the server
+
+Run this on the server (or via `docker compose exec`) with a name for the new client:
+
+```sh
+sudo docker compose exec masqued genClient alice
+```
+
+This registers `alice` in the database, generates an Ed25519 key pair signed by the client CA, and saves a `bundle.zip` to:
+
+```
+server/certs/client/alice/bundle.zip
+```
+
+The zip contains `client.crt`, `client.key`, and `ca.crt` (a symlink to the server CA).
+
+### 2. Copy certs to the client machine
+
+```sh
+# On the server
+scp server/certs/client/alice/bundle.zip user@client-host:~
+
+# On the client
+mkdir -p /etc/masque/certs
+cd /etc/masque/certs
+unzip ~/bundle.zip
+```
+
+### 3. Configure the client
+
+```sh
+cp /path/to/masque.conf.template /etc/masque/masque.conf
+```
+
+Edit `/etc/masque/masque.conf`:
+
+| Key | Required | Description | Example |
+|-----|----------|-------------|---------|
+| `LOG_LEVEL` | yes | Verbosity | `info` |
+| `LOG_PATH` | yes | Log file path | `/etc/masque/logs/masque.log` |
+| `ENABLE_KEY_LOG` | yes | Write TLS session keys (Wireshark) | `false` |
+| `KEY_LOG_PATH` | yes | Path for TLS key log file | `/tmp/masque_keylog.txt` |
+| `SERVER` | yes | Server address as `FQDN[:port]` (default port: 443) | `vpn.example.com:443` |
+| `SERVER_CA_PATH` | yes | Path to server CA cert | `/etc/masque/certs/ca.crt` |
+| `CLIENT_CERT_PATH` | yes | Path to client cert | `/etc/masque/certs/client.crt` |
+| `CLIENT_KEY_PATH` | yes | Path to client private key | `/etc/masque/certs/client.key` |
+
+### 4. Run the client
+
+**Binary (bare metal / Alpine APK):**
+
+```sh
+sudo masque-vpn-client -f /etc/masque/masque.conf
+```
+
+**Docker:**
+
+```sh
+cd client
+sudo docker compose up --build
+```
+
+The `docker-compose.yml` shows an example of two simultaneous clients (`client1`, `client2`) each with their own cert volume mount.
+
+---
+
+## Management API
+
+The server exposes an HTTP API over a Unix socket at `/var/run/masqued.sock`. All management tooling (including `genClient`) talks to this socket. The API surface is:
+
+### Clients
+
+| Method | Path | Query | Description |
+|--------|------|-------|-------------|
+| `GET` | `/client` | | List all clients |
+| `POST` | `/client` | `?type=upsert` | Create or update clients by name |
+| `POST` | `/client` | `?type=assign-roles` | Assign roles to clients |
+| `POST` | `/client` | `?type=unassign-roles` | Remove roles from clients |
+| `DELETE` | `/client` | | Delete clients by ID |
+| `GET` | `/client/{id}` | | Get a specific client |
+| `POST` | `/client/{id}` | `?type=update-name` | Rename a client |
+
+### Roles
+
+| Method | Path | Query | Description |
+|--------|------|-------|-------------|
+| `GET` | `/role` | | List all roles |
+| `POST` | `/role` | `?type=upsert` | Create or update roles |
+| `POST` | `/role` | `?type=assign-resources` | Assign resources to roles |
+| `POST` | `/role` | `?type=unassign-resources` | Remove resources from roles |
+| `DELETE` | `/role` | | Delete roles by ID |
+| `GET` | `/role/{id}` | | Get a specific role |
+| `POST` | `/role/{id}` | `?type=update-name` | Rename a role |
+
+### Resources
+
+Resources are CIDR prefixes that the server will advertise as routes to clients that hold a role granting those resources.
+
+| Method | Path | Query | Description |
+|--------|------|-------|-------------|
+| `GET` | `/resource` | | List all resources |
+| `POST` | `/resource` | `?type=upsert` | Create or update resources |
+| `DELETE` | `/resource` | | Delete resources by ID |
+| `GET` | `/resource/{id}` | | Get a specific resource |
+| `POST` | `/resource/{id}` | `?type=update-name` | Rename a resource |
+
+### DHCP
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/dhcp` | Get the current IP pool range |
+| `PUT` | `/dhcp` | Update the IP pool range |
+
+**Example — create a client and list all clients:**
+
+```sh
+# Create
+curl --unix-socket /var/run/masqued.sock \
+  -X POST 'http://masqued/client?type=upsert' \
+  -d '{"names": ["alice"]}'
+
+# List
+curl --unix-socket /var/run/masqued.sock http://masqued/client
+```
+
+---
+
+## Access control model
+
+```
+Client ──(many-to-many)──► Role ──(many-to-many)──► Resource (CIDR prefix)
+```
+
+When a client connects, the server:
+1. Looks up the client's roles via the mTLS certificate CN (client DB ID)
+2. Collects all resources (CIDR prefixes) associated with those roles
+3. Advertises those prefixes as routes to the client via `CONNECT-IP`
+
+A client with no roles assigned receives no routes and cannot tunnel any traffic.
+
+---
+
+## Certificate architecture
+
+```
+Server CA (Ed25519, 10yr)
+  └── server.crt  (Ed25519, signed by Server CA)
+          Used for: QUIC/TLS server authentication
+
+Client CA (Ed25519, 10yr)
+  └── client.crt  (Ed25519, signed by Client CA, CN = client DB ID)
+          Used for: mTLS client authentication + client identity
+```
+
+The server trusts the Client CA and requires client certificates (`RequireAndVerifyClientCert`). The client trusts the Server CA. There is no cross-signing — the two CAs are independent.
+
+## Security notes
+
+- All keys are Ed25519. No RSA, no ECDSA.
+- The `ENABLE_KEY_LOG` option writes TLS session keys to disk for Wireshark-based debugging. **Never enable this in production.**
+- Raw sockets require `CAP_NET_ADMIN` and `CAP_NET_RAW`. The server binary has `cap_net_admin+ep` applied at runtime by `run.sh`.
+
+---
 
 
-Step 3: Go to MASQUE server and generate client cert with the helper script `genClientCert.sh`
-`sudo docker compose exec -it masque-server /scripts/genClientCert.sh [client-name]`
-A new RSA key pair with a x509 cert should be available in the mounted folder: `server/certs/client/` 
+## Troubleshooting
 
-Step 4: Copy certs to client local folder `/etc/masque/certs`
+**Client fails to connect with `failed to dial QUIC connection`**
+- Confirm port 443/UDP is open on the server firewall
+- Confirm `SERVER` in `masque.conf` resolves to the correct IP
+- Check that `ca.crt` on the client matches the server's CA
 
-Step 5: Build the binary `bash client/build.sh`
+**Client connects but has no routes / no internet**
+- The client may have no roles assigned, or the roles have no resources
+- Use `genClient` and the management API to assign roles and CIDR resources
 
-Step 6: Run the binary `sudo client/build/client`
+**`Failed to get available IP`**
+- The DHCP pool may be exhausted
+- Check the pool with `GET /dhcp` and expand it with `PUT /dhcp` if needed
 
-NOTE:
-If the postgres service does not respect environment variables, then run this command to manually create a user
-`CREATE USER [name] WITH PASSWORD '[pass]' CREATEDB;`
-or update the existing user pass with
-`\password`
+**`setsockopt(SOL_SOCKET, SO_MARK) — process needs CAP_NET_ADMIN`**
+- The server binary must have `CAP_NET_ADMIN`. In Docker this is provided by `cap_add: NET_ADMIN`. Bare-metal: `sudo setcap cap_net_admin+ep ./bin`

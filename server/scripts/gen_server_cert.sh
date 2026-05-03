@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-source /opt/masqued/scripts/helper.sh
+source /etc/masqued/scripts/helper.sh
 
 POSITIONAL_ARGS=()
 FORCEUPDATE=0
@@ -100,7 +100,7 @@ elif [[ -f $SERVER_CERT_DIR/server.key ]] && [[ $FORCEUPDATE -eq 0 ]]; then
 else
     log "info" "Generating server cert"
     tempConf=$(mktemp)
-    cat /opt/masqued/extras/self-req.conf > $tempConf
+    cat /etc/masqued/extras/self-req.conf > $tempConf
     dnsListLength=${#DNSLIST[@]}
     ipListLength=${#IPLIST[@]}
     sans=""
@@ -124,7 +124,7 @@ else
     openssl req -new -key server.key -out server.csr \
         -config $tempConf -reqexts v3_ca \
         -subj "/C=$C/ST=$ST/L=$L/O=$O/OU=$OU/CN=$CN"
-    openssl ca -in ./server.csr -out ./server.crt -config /opt/masqued/extras/self-ca.conf -rand_serial -batch -notext
+    openssl ca -in ./server.csr -out ./server.crt -config /etc/masqued/extras/self-ca.conf -rand_serial -batch -notext
     cat $SERVER_CA_DIR/certs/ca.cert.pem >>./server.crt
 fi
 log "info" "Done"
