@@ -81,7 +81,7 @@ jobs:
 
     steps:
       - name: Install packaging tools
-        run: apk add --no-cache abuild doas git curl
+        run: apk update && apk add --no-cache abuild doas git curl
 
       - uses: actions/checkout@v4
 
