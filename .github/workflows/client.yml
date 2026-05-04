@@ -106,7 +106,7 @@ jobs:
           mkdir -p /apkbuild/${{ env.PKG_NAME }}
           cp dist/masque                      /apkbuild/${{ env.PKG_NAME }}/
           cp client/masque.conf.template      /apkbuild/${{ env.PKG_NAME }}/
-          cp packaging/alpine/masque.initd    /apkbuild/${{ env.PKG_NAME }}/
+          cp client/packaging/alpine/masque.initd    /apkbuild/${{ env.PKG_NAME }}/
           sed \
             -e "s|%%PKGVER%%|$PKGVER|g" \
             -e "s|%%PKGREL%%|$PKGREL|g" \
