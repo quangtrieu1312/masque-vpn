@@ -1,5 +1,5 @@
-# Contributor: Your Name <you@example.com>
-# Maintainer:  Your Name <you@example.com>
+# Contributor: Trieu Truong <quangtrieu1312@gmail.com>
+# Maintainer: Trieu Truong <quangtrieu1312@gmail.com>
 pkgname=masque
 pkgver=%%PKGVER%%
 pkgrel=%%PKGREL%%
