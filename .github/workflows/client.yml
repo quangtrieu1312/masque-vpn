@@ -112,6 +112,7 @@ jobs:
             -e "s|%%PKGREL%%|$PKGREL|g" \
             client/packaging/alpine/APKBUILD.tpl > /apkbuild/${{ env.PKG_NAME }}/APKBUILD
           chown -R builduser /apkbuild /home/builduser/.abuild
+          chmod +x /apkbuild/${{ env.PKG_NAME }}/masque
           su builduser -c "cd /apkbuild/${{ env.PKG_NAME }} && abuild checksum && abuild -r"
 
       - name: Collect APK output
