@@ -1,5 +1,5 @@
 LOG_LEVEL=info
-LOG_PATH=/etc/masque/logs/masque.log
+LOG_PATH=/var/log/masque.log
 
 ENABLE_KEY_LOG=false
 KEY_LOG_PATH=/tmp/masque_keylog.txt
