@@ -1,0 +1,49 @@
+#!/sbin/openrc-run
+
+name="masque"
+description="MASQUE VPN client (IP-over-HTTP3/QUIC)"
+
+command="/usr/bin/masque"
+command_args="-f /etc/masque/masque.conf"
+command_background=true
+pidfile="/run/${RC_SVCNAME}.pid"
+
+# Required for:
+#   - TUN device creation
+#   - ip rule add/del table 54321 (PreUp/PostDown)
+#   - ip route add (per advertised prefix)
+capabilities="^cap_net_admin"
+
+required_files="/etc/masque/masque.conf"
+
+depend() {
+	need net
+	need dns
+	after firewall
+}
+
+start_pre() {
+	# Ensure log directory exists (LOG_PATH in masque.conf points here)
+	checkpath -d -m 0750 -o root:root /etc/masque/logs
+
+	# Ensure cert files referenced in masque.conf are present
+	if [ ! -f /etc/masque/certs/client.crt ]; then
+		eerror "Client certificate not found: /etc/masque/certs/client.crt"
+		return 1
+	fi
+	if [ ! -f /etc/masque/certs/client.key ]; then
+		eerror "Client key not found: /etc/masque/certs/client.key"
+		return 1
+	fi
+	if [ ! -f /etc/masque/certs/ca.crt ]; then
+		eerror "Server CA cert not found: /etc/masque/certs/ca.crt"
+		return 1
+	fi
+}
+
+stop_post() {
+	# The binary runs PostDown (ip rule del table 54321) on clean exit.
+	# If it was killed uncleanly, clean up the routing rule manually.
+	/sbin/ip rule del table 54321 2>/dev/null || true
+}
+
