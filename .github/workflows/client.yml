@@ -22,8 +22,6 @@ jobs:
   build:
     name: Build Alpine binary
     runs-on: ubuntu-latest
-    # Match the Dockerfile: golang:tip-alpine3.22.
-    # go.mod declares go 1.25 (tip), so we need a bleeding-edge toolchain.
     container:
       image: golang:tip-alpine3.22
     outputs:
@@ -49,11 +47,9 @@ jobs:
 
       - name: Build production binary
         env:
-          # CGO_ENABLED=1 → dynamically linked against musl libc (Alpine native)
           CGO_ENABLED: "1"
           GOOS: linux
           GOARCH: amd64
-        # Source root moved to client/src/ on this branch
         run: |
           cd client/src
           go build \
@@ -63,12 +59,6 @@ jobs:
             -o ../../dist/masque \
             .
 
-      - name: Verify binary (size + linkage)
-        run: |
-          ls -lh dist/masque
-          file dist/masque
-          readelf -d dist/masque | grep NEEDED || true
-
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
@@ -77,25 +67,21 @@ jobs:
           retention-days: 1
 
   # ──────────────────────────────────────────────
-  # Phase 2 – Package, sign, and publish APK
+  # Phase 2 – Package and publish APK
   # ──────────────────────────────────────────────
   package:
     name: Package & publish APK
     needs: build
     runs-on: ubuntu-latest
+    environment: PROD
     container:
       image: alpine:3.22
     permissions:
-      contents: write   # needed for gh-pages push and GitHub Releases
+      contents: write
 
     steps:
       - name: Install packaging tools
-        run: |
-          apk add --no-cache \
-            abuild \
-            alpine-sdk \
-            git \
-            sudo
+        run: apk add --no-cache abuild doas git curl
 
       - uses: actions/checkout@v4
 
@@ -105,69 +91,33 @@ jobs:
           name: masque-bin
           path: dist/
 
-      - name: Restore RSA signing key from secrets
-        env:
-          RSA_PRIVATE_KEY: ${{ secrets.ABUILD_PRIVATE_KEY }}
-          RSA_PUBLIC_KEY:  ${{ secrets.ABUILD_PUBLIC_KEY }}
-          KEY_NAME:        ${{ secrets.ABUILD_KEY_NAME }}
+      - name: Setup build user and throwaway signing key
         run: |
-          mkdir -p /root/.abuild
-          printf '%s' "$RSA_PRIVATE_KEY" > "/root/.abuild/${KEY_NAME}"
-          printf '%s' "$RSA_PUBLIC_KEY"  > "/root/.abuild/${KEY_NAME}.pub"
-          chmod 0600 "/root/.abuild/${KEY_NAME}"
-          echo "PACKAGER_PRIVKEY=/root/.abuild/${KEY_NAME}" > /root/.abuild/abuild.conf
-          cp "/root/.abuild/${KEY_NAME}.pub" /etc/apk/keys/
+          adduser -D builduser
+          addgroup builduser abuild
+          su builduser -c "abuild-keygen -a -n"
+          cp /home/builduser/.abuild/*.pub /etc/apk/keys/
 
-      - name: Prepare APKBUILD workspace
+      - name: Build APK
         env:
           PKGVER: ${{ needs.build.outputs.pkgver }}
           PKGREL: ${{ needs.build.outputs.pkgrel }}
         run: |
           mkdir -p /apkbuild/${{ env.PKG_NAME }}
-          cp dist/masque /apkbuild/${{ env.PKG_NAME }}/
-
-          # Config template — now client/masque.conf.template (was masque0.conf.template)
-          cp client/masque.conf.template /apkbuild/${{ env.PKG_NAME }}/
-
-          # OpenRC init script
-          [ -f packaging/alpine/masque.initd ] && \
-            cp packaging/alpine/masque.initd /apkbuild/${{ env.PKG_NAME }}/ || true
-
-          # Render the APKBUILD template
+          cp dist/masque                      /apkbuild/${{ env.PKG_NAME }}/
+          cp client/masque.conf.template      /apkbuild/${{ env.PKG_NAME }}/
+          cp packaging/alpine/masque.initd    /apkbuild/${{ env.PKG_NAME }}/
           sed \
             -e "s|%%PKGVER%%|$PKGVER|g" \
             -e "s|%%PKGREL%%|$PKGREL|g" \
             packaging/alpine/APKBUILD.tpl > /apkbuild/${{ env.PKG_NAME }}/APKBUILD
-
-      - name: Build APK
-        run: |
-          adduser -D builduser
-          addgroup builduser abuild
-          chown -R builduser /apkbuild /root/.abuild
+          chown -R builduser /apkbuild /home/builduser/.abuild
           su builduser -c "cd /apkbuild/${{ env.PKG_NAME }} && abuild checksum && abuild -r"
 
       - name: Collect APK output
         run: |
           mkdir -p repo/x86_64
           find /home/builduser/packages -name '*.apk' -exec cp {} repo/x86_64/ \;
-          cp /root/.abuild/*.pub repo/
-
-      - name: Index and sign repository
-        run: |
-          apk index -vU \
-            -o repo/x86_64/APKINDEX.tar.gz \
-            repo/x86_64/*.apk
-          abuild-sign \
-            -k "/root/.abuild/${{ secrets.ABUILD_KEY_NAME }}" \
-            repo/x86_64/APKINDEX.tar.gz
-
-      - name: Publish repo to gh-pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: repo
-          destination_dir: alpine/${{ env.ALPINE_VERSION }}/community
-          keep_files: true
 
       - name: Attach APK to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
