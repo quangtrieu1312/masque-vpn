@@ -110,7 +110,7 @@ jobs:
           sed \
             -e "s|%%PKGVER%%|$PKGVER|g" \
             -e "s|%%PKGREL%%|$PKGREL|g" \
-            packaging/alpine/APKBUILD.tpl > /apkbuild/${{ env.PKG_NAME }}/APKBUILD
+            client/packaging/alpine/APKBUILD.tpl > /apkbuild/${{ env.PKG_NAME }}/APKBUILD
           chown -R builduser /apkbuild /home/builduser/.abuild
           su builduser -c "cd /apkbuild/${{ env.PKG_NAME }} && abuild checksum && abuild -r"
 
