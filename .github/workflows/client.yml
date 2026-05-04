@@ -103,7 +103,8 @@ jobs:
         run: |
           adduser -D builduser
           addgroup builduser abuild
-          su builduser -c "abuild-keygen -a -i -n"
+          su builduser -c "abuild-keygen -a -n"
+          cp /home/builduser/.abuild/*.pub /etc/apk/keys/
 
       - name: Build APK
         env:
