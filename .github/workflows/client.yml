@@ -84,6 +84,7 @@ jobs:
     name: Package & publish APK
     needs: build
     runs-on: ubuntu-latest
+    environment: PROD
     container:
       image: alpine:3.22
     permissions:
@@ -105,71 +106,17 @@ jobs:
         with:
           name: masque-vpn-client-bin
           path: dist/
-
-      - name: Restore RSA signing key from secrets
+      - name: Publish to Codeberg Alpine registry
         env:
-          RSA_PRIVATE_KEY: ${{ secrets.ABUILD_PRIVATE_KEY }}
-          RSA_PUBLIC_KEY:  ${{ secrets.ABUILD_PUBLIC_KEY }}
-          KEY_NAME:        ${{ secrets.ABUILD_KEY_NAME }}
+          CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
+          CODEBERG_OWNER: ${{ secrets.CODEBERG_OWNER }}
         run: |
-          mkdir -p /root/.abuild
-          printf '%s' "$RSA_PRIVATE_KEY" > "/root/.abuild/${KEY_NAME}"
-          printf '%s' "$RSA_PUBLIC_KEY"  > "/root/.abuild/${KEY_NAME}.pub"
-          chmod 0600 "/root/.abuild/${KEY_NAME}"
-          echo "PACKAGER_PRIVKEY=/root/.abuild/${KEY_NAME}" > /root/.abuild/abuild.conf
-          cp "/root/.abuild/${KEY_NAME}.pub" /etc/apk/keys/
-
-      - name: Prepare APKBUILD workspace
-        env:
-          PKGVER: ${{ needs.build.outputs.pkgver }}
-          PKGREL: ${{ needs.build.outputs.pkgrel }}
-        run: |
-          mkdir -p /apkbuild/${{ env.PKG_NAME }}
-          cp dist/masque-vpn-client /apkbuild/${{ env.PKG_NAME }}/
-
-          # Config template — now client/masque.conf.template (was masque0.conf.template)
-          cp client/masque.conf.template /apkbuild/${{ env.PKG_NAME }}/
-
-          # OpenRC init script
-          [ -f packaging/alpine/masque-vpn-client.initd ] && \
-            cp packaging/alpine/masque-vpn-client.initd /apkbuild/${{ env.PKG_NAME }}/ || true
-
-          # Render the APKBUILD template
-          sed \
-            -e "s|%%PKGVER%%|$PKGVER|g" \
-            -e "s|%%PKGREL%%|$PKGREL|g" \
-            packaging/alpine/APKBUILD.tpl > /apkbuild/${{ env.PKG_NAME }}/APKBUILD
-
-      - name: Build APK
-        run: |
-          adduser -D builduser
-          addgroup builduser abuild
-          chown -R builduser /apkbuild /root/.abuild
-          su builduser -c "cd /apkbuild/${{ env.PKG_NAME }} && abuild checksum && abuild -r"
-
-      - name: Collect APK output
-        run: |
-          mkdir -p repo/x86_64
-          find /home/builduser/packages -name '*.apk' -exec cp {} repo/x86_64/ \;
-          cp /root/.abuild/*.pub repo/
-
-      - name: Index and sign repository
-        run: |
-          apk index -vU \
-            -o repo/x86_64/APKINDEX.tar.gz \
-            repo/x86_64/*.apk
-          abuild-sign \
-            -k "/root/.abuild/${{ secrets.ABUILD_KEY_NAME }}" \
-            repo/x86_64/APKINDEX.tar.gz
-
-      - name: Publish repo to gh-pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: repo
-          destination_dir: alpine/${{ env.ALPINE_VERSION }}/community
-          keep_files: true
-
+          for apk in repo/x86_64/*.apk; do
+            curl --fail \
+              --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
+              --upload-file "$apk" \
+              "https://codeberg.org/api/packages/$CODEBERG_OWNER/alpine/v${{ env.ALPINE_VERSION }}/main"
+          done
       - name: Attach APK to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
