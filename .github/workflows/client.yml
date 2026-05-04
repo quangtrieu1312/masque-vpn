@@ -13,7 +13,7 @@ on:
         default: "0.1.0"
 
 env:
-  ALPINE_VERSION: "3.22"
+  ALPINE_VERSION: "3.23"
   PKG_NAME: masque-vpn-client
 
 jobs:
@@ -23,10 +23,8 @@ jobs:
   build:
     name: Build Alpine binary
     runs-on: ubuntu-latest
-    # Match the Dockerfile: golang:tip-alpine3.22.
-    # go.mod declares go 1.25 (tip), so we need a bleeding-edge toolchain.
     container:
-      image: golang:tip-alpine3.22
+      image: golang:tip-alpine
     outputs:
       pkgver: ${{ steps.meta.outputs.pkgver }}
       pkgrel: ${{ steps.meta.outputs.pkgrel }}
@@ -64,12 +62,6 @@ jobs:
             -o ../../dist/masque-vpn-client \
             .
 
-      - name: Verify binary (size + linkage)
-        run: |
-          ls -lh dist/masque-vpn-client
-          file dist/masque-vpn-client
-          readelf -d dist/masque-vpn-client | grep NEEDED || true
-
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
@@ -86,7 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: PROD
     container:
-      image: alpine:3.22
+      image: alpine:latest
     permissions:
       contents: write   # needed for gh-pages push and GitHub Releases
 
@@ -97,8 +89,8 @@ jobs:
             abuild \
             alpine-sdk \
             git \
+            curl \
             sudo
-
       - uses: actions/checkout@v4
 
       - name: Download binary
