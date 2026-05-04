@@ -30,7 +30,7 @@ jobs:
 
     steps:
       - name: Install C toolchain (for CGO / musl dynamic linking)
-        run: apk add --no-cache git gcc musl-dev build-base
+        run: apk update && apk add --no-cache git gcc musl-dev build-base
 
       - uses: actions/checkout@v4
 
