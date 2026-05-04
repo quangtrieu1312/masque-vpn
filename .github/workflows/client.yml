@@ -58,6 +58,7 @@ jobs:
         run: |
           cd client/src
           go build \
+            -buildvcs=false \
             -ldflags="-s -w -X main.version=${{ steps.meta.outputs.pkgver }}" \
             -trimpath \
             -o ../../dist/masque-vpn-client \
