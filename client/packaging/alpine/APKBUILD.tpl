@@ -21,12 +21,6 @@ source="
 	masque.conf.template
 	masque.initd
 "
-# abuild checksum fills these in automatically
-sha256sums="
-	SKIP
-	SKIP
-	SKIP
-"
 
 builddir="$srcdir"
 
@@ -44,13 +38,13 @@ package() {
 	install -Dm755 "$builddir"/masque \
 		"$pkgdir"/usr/bin/masque
 
-	# Config template — installs to /opt/masque/ (changed from /etc/masque/)
+	# Config template — installs to /etc/masque/
 	install -Dm644 "$builddir"/masque.conf.template \
-		"$pkgdir"/opt/masque/masque.conf.template
+		"$pkgdir"/etc/masque/masque.conf.template
 
 	# Runtime directories expected by the binary
-	install -dm755 "$pkgdir"/opt/masque/certs
-	install -dm750 "$pkgdir"/opt/masque/logs
+	install -dm755 "$pkgdir"/etc/masque/certs
+	install -dm750 "$pkgdir"/etc/masque/logs
 }
 
 # OpenRC init sub-package
