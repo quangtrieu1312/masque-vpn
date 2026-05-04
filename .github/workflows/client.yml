@@ -120,6 +120,18 @@ jobs:
           mkdir -p repo/x86_64
           find /home/builduser/packages -name '*.apk' -exec cp {} repo/x86_64/ \;
 
+      - name: Publish to Codeberg Alpine registry
+        env:
+          CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
+          CODEBERG_OWNER: ${{ secrets.CODEBERG_OWNER }}
+        run: |
+          for apk in repo/x86_64/*.apk; do
+            curl --fail \
+              --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
+              --upload-file "$apk" \
+              "https://codeberg.org/api/packages/$CODEBERG_OWNER/alpine/v${{ env.ALPINE_VERSION }}/main"
+          done
+
       - name: Attach APK to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
