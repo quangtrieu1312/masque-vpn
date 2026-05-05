@@ -1,0 +1,139 @@
+name: Alpine APK Release
+
+on:
+  push:
+    branch:
+      - "feature/*"
+  workflow_dispatch:
+    inputs:
+      pkgver:
+        description: "Package version (e.g. 0.1.0)"
+        required: true
+        default: "0.1.0"
+
+env:
+  ALPINE_VERSION: "3.23"
+  PKG_NAME: masque
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Phase 1 – Build production binary on Alpine
+  # ──────────────────────────────────────────────
+  build:
+    name: Build Alpine binary
+    runs-on: ubuntu-latest
+    container:
+      image: golang:tip-alpine3.23
+    outputs:
+      pkgver: ${{ steps.meta.outputs.pkgver }}
+      pkgrel: ${{ steps.meta.outputs.pkgrel }}
+
+    steps:
+      - name: Install C toolchain (for CGO / musl dynamic linking)
+        run: apk update && apk add --no-cache git gcc musl-dev build-base
+
+      - uses: actions/checkout@v4
+
+      - name: Resolve version metadata
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            PKGVER="${{ github.event.inputs.pkgver }}"
+          else
+            PKGVER="${GITHUB_REF_NAME#v}"
+          fi
+          echo "pkgver=$PKGVER" >> "$GITHUB_OUTPUT"
+          echo "pkgrel=0"       >> "$GITHUB_OUTPUT"
+
+      - name: Build production binary
+        env:
+          CGO_ENABLED: "1"
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          cd client/src
+          go build \
+            -buildvcs=false \
+            -ldflags="-s -w -X main.version=${{ steps.meta.outputs.pkgver }}" \
+            -trimpath \
+            -o ../../dist/masque \
+            .
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: masque-bin
+          path: dist/masque
+          retention-days: 1
+
+  # ──────────────────────────────────────────────
+  # Phase 2 – Package and publish APK
+  # ──────────────────────────────────────────────
+  package:
+    name: Package & publish APK
+    needs: build
+    runs-on: ubuntu-latest
+    environment: PROD
+    container:
+      image: alpine:3.23
+    permissions:
+      contents: write
+
+    steps:
+      - name: Install packaging tools
+        run: apk update && apk add --no-cache abuild doas git curl
+
+      - uses: actions/checkout@v4
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: masque-bin
+          path: dist/
+
+      - name: Setup build user and throwaway signing key
+        run: |
+          adduser -D builduser
+          addgroup builduser abuild
+          su builduser -c "abuild-keygen -a -n"
+          cp /home/builduser/.abuild/*.pub /etc/apk/keys/
+
+      - name: Build APK
+        env:
+          PKGVER: ${{ needs.build.outputs.pkgver }}
+          PKGREL: ${{ needs.build.outputs.pkgrel }}
+        run: |
+          mkdir -p /apkbuild/${{ env.PKG_NAME }}
+          cp dist/masque                      /apkbuild/${{ env.PKG_NAME }}/
+          cp client/masque.conf.template      /apkbuild/${{ env.PKG_NAME }}/
+          cp client/packaging/alpine/masque.initd    /apkbuild/${{ env.PKG_NAME }}/
+          sed \
+            -e "s|%%PKGVER%%|$PKGVER|g" \
+            -e "s|%%PKGREL%%|$PKGREL|g" \
+            client/packaging/alpine/APKBUILD.tpl > /apkbuild/${{ env.PKG_NAME }}/APKBUILD
+          chown -R builduser /apkbuild /home/builduser/.abuild
+          chmod +x /apkbuild/${{ env.PKG_NAME }}/masque
+          su builduser -c "cd /apkbuild/${{ env.PKG_NAME }} && abuild checksum && abuild -r"
+
+      - name: Collect APK output
+        run: |
+          mkdir -p repo/x86_64
+          find /home/builduser/packages -name '*.apk' -exec cp {} repo/x86_64/ \;
+
+      - name: Publish to Codeberg Alpine registry
+        env:
+          CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
+          CODEBERG_OWNER: ${{ secrets.CODEBERG_OWNER }}
+        run: |
+          for apk in repo/x86_64/*.apk; do
+            curl --fail \
+              --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
+              --upload-file "$apk" \
+              "https://codeberg.org/api/packages/$CODEBERG_OWNER/alpine/v${{ env.ALPINE_VERSION }}/testing"
+          done
+
+      - name: Attach APK to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: repo/x86_64/*.apk
