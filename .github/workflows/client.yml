@@ -37,13 +37,17 @@ jobs:
       - name: Resolve version metadata
         id: meta
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            PKGVER="${{ github.event.inputs.pkgver }}"
-          else
-            PKGVER="${GITHUB_REF_NAME#v}"
+          VERSION="$(cat client/VERSION)"
+          PKGREL="${VERSION##*-}"                 # extract suffix after last -
+          PKGVER="${VERSION%-*}"                  # strip suffix
+
+          # if no suffix, pkgrel defaults to 0
+          if [ "$PKGREL" = "$PKGVER" ]; then
+            PKGREL=0
           fi
+
           echo "pkgver=$PKGVER" >> "$GITHUB_OUTPUT"
-          echo "pkgrel=0"       >> "$GITHUB_OUTPUT"
+          echo "pkgrel=$PKGREL" >> "$GITHUB_OUTPUT"
 
       - name: Build production binary
         env:
