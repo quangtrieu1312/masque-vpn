@@ -10,7 +10,7 @@ license="MIT"
 depends=""
 makedepends=""
 options="!check !strip"  # pre-built binary requires NET_ADMIN at runtime
-subpackages="$pkgname-openrc"
+subpackages="$pkgname-openrc:openrc"
 source="
 	masque
 	masque.conf.template
@@ -35,4 +35,11 @@ package() {
 	# default_openrc() will automatically split this into the -openrc subpackage
 	install -Dm755 "$builddir"/masque.initd \
 		"$pkgdir"/etc/init.d/masque
+}
+
+openrc() {
+	arch="noarch"
+	pkgdesc="$pkgdesc (OpenRC init scripts)"
+	install_if="$pkgname=$pkgver-r$pkgrel openrc"
+	default_openrc
 }
