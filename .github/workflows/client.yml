@@ -138,10 +138,17 @@ jobs:
           CODEBERG_OWNER: ${{ secrets.CODEBERG_OWNER }}
         run: |
           for apk in repo/${{ matrix.alpine_arch }}/*.apk; do
+            filename=$(basename "$apk")
+            arch=$(echo "$filename" | rev | cut -d. -f2 | rev)
+            # delete first in case it already exists (e.g. noarch from other matrix job)
+            curl --silent \
+              --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
+              -X DELETE \
+              "https://codeberg.org/api/packages/$CODEBERG_OWNER/alpine/v${{ env.ALPINE_VERSION }}/testing/$arch/$filename" || true
             curl --fail \
               --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
               --upload-file "$apk" \
-              "https://codeberg.org/api/packages/$CODEBERG_OWNER/alpine/v${{ env.ALPINE_VERSION }}/main"
+              "https://codeberg.org/api/packages/$CODEBERG_OWNER/alpine/v${{ env.ALPINE_VERSION }}/testing"
           done
 
       - name: Attach APK to GitHub Release
