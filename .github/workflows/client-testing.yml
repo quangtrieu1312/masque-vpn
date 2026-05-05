@@ -2,7 +2,7 @@ name: Alpine APK Testing
 
 on:
   push:
-    branch:
+    branches:
       - "feature/*"
 
 env:
@@ -11,12 +11,10 @@ env:
 
 jobs:
   # ──────────────────────────────────────────────
-  # Phase 1 – Build production binary on Alpine
+  # Phase 1 – Build production binary
   # ──────────────────────────────────────────────
   build:
-    name: Build Alpine binary
-    container:
-      image: golang:tip-alpine3.23
+    name: Build Alpine binary (${{ matrix.alpine_arch }})
     strategy:
       matrix:
         include:
@@ -32,23 +30,25 @@ jobs:
       pkgrel: ${{ steps.meta.outputs.pkgrel }}
 
     steps:
-      - name: Install C toolchain
-        run: apk update && apk add --no-cache git gcc musl-dev build-base
-
       - uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Install C toolchain
+        run: sudo apt-get install -y gcc musl-tools
 
       - name: Resolve version metadata
         id: meta
         run: |
           VERSION="$(cat client/VERSION)"
-          PKGREL="${VERSION##*-}"                 # extract suffix after last -
-          PKGVER="${VERSION%-*}"                  # strip suffix
-
-          # if no suffix, pkgrel defaults to 0
+          PKGREL="${VERSION##*-}"
+          PKGVER="${VERSION%-*}"
           if [ "$PKGREL" = "$PKGVER" ]; then
             PKGREL=0
           fi
-
           echo "pkgver=$PKGVER" >> "$GITHUB_OUTPUT"
           echo "pkgrel=$PKGREL" >> "$GITHUB_OUTPUT"
 
@@ -57,6 +57,7 @@ jobs:
           CGO_ENABLED: "1"
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
+          CC: musl-gcc
         run: |
           cd client/src
           go build \
@@ -77,28 +78,21 @@ jobs:
   # Phase 2 – Package and publish APK
   # ──────────────────────────────────────────────
   package:
-    name: Package & publish APK
+    name: Package & publish APK (${{ matrix.alpine_arch }})
     needs: build
     environment: TESTING
     strategy:
       matrix:
         include:
-          - goarch: amd64
-            alpine_arch: x86_64
+          - alpine_arch: x86_64
             runner: ubuntu-latest
-          - goarch: arm64
-            alpine_arch: aarch64
+          - alpine_arch: aarch64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
-    container:
-      image: alpine:3.23
     permissions:
       contents: write
 
     steps:
-      - name: Install packaging tools
-        run: apk update && apk add --no-cache abuild doas git curl
-
       - uses: actions/checkout@v4
 
       - name: Download binary
@@ -107,34 +101,52 @@ jobs:
           name: masque-bin-${{ matrix.alpine_arch }}
           path: dist/
 
-      - name: Setup build user and throwaway signing key
+      - name: Resolve version metadata
+        id: meta
         run: |
-          adduser -D builduser
-          addgroup builduser abuild
-          su builduser -c "abuild-keygen -a -n"
-          cp /home/builduser/.abuild/*.pub /etc/apk/keys/
+          VERSION="$(cat client/VERSION)"
+          PKGREL="${VERSION##*-}"
+          PKGVER="${VERSION%-*}"
+          if [ "$PKGREL" = "$PKGVER" ]; then
+            PKGREL=0
+          fi
+          echo "pkgver=$PKGVER" >> "$GITHUB_OUTPUT"
+          echo "pkgrel=$PKGREL" >> "$GITHUB_OUTPUT"
 
-      - name: Build APK
+      - name: Build and collect APK
         env:
-          PKGVER: ${{ needs.build.outputs.pkgver }}
-          PKGREL: ${{ needs.build.outputs.pkgrel }}
+          PKGVER: ${{ steps.meta.outputs.pkgver }}
+          PKGREL: ${{ steps.meta.outputs.pkgrel }}
+          ALPINE_ARCH: ${{ matrix.alpine_arch }}
+          PKG_NAME: ${{ env.PKG_NAME }}
         run: |
-          mkdir -p /apkbuild/${{ env.PKG_NAME }}
-          cp dist/masque-${{ matrix.alpine_arch }} /apkbuild/${{ env.PKG_NAME }}/masque
-          cp client/masque.conf.template /apkbuild/${{ env.PKG_NAME }}/
-          cp client/packaging/alpine/masque.initd /apkbuild/${{ env.PKG_NAME }}/
+          # prepare workspace on host
+          mkdir -p apkbuild/$PKG_NAME
+          cp dist/masque-$ALPINE_ARCH             apkbuild/$PKG_NAME/masque
+          cp client/masque.conf.template          apkbuild/$PKG_NAME/
+          cp client/packaging/alpine/masque.initd apkbuild/$PKG_NAME/
           sed \
             -e "s|%%PKGVER%%|$PKGVER|g" \
             -e "s|%%PKGREL%%|$PKGREL|g" \
-            client/packaging/alpine/APKBUILD.tpl > /apkbuild/${{ env.PKG_NAME }}/APKBUILD
-          chown -R builduser /apkbuild /home/builduser/.abuild
-          chmod +x /apkbuild/${{ env.PKG_NAME }}/masque
-          su builduser -c "cd /apkbuild/${{ env.PKG_NAME }} && abuild checksum && abuild -r"
+            client/packaging/alpine/APKBUILD.tpl > apkbuild/$PKG_NAME/APKBUILD
+          chmod +x apkbuild/$PKG_NAME/masque
 
-      - name: Collect APK output
-        run: |
-          mkdir -p repo/${{ matrix.alpine_arch }}
-          find /home/builduser/packages -name '*.apk' -exec cp {} repo/${{ matrix.alpine_arch }}/ \;
+          # run abuild inside Alpine container
+          docker run --rm \
+            -v "${{ github.workspace }}/apkbuild:/apkbuild" \
+            -v "${{ github.workspace }}/repo:/repo" \
+            alpine:3.23 sh -c "
+              apk add --no-cache abuild doas
+              adduser -D builduser
+              addgroup builduser abuild
+              su builduser -c 'abuild-keygen -a -n'
+              cp /home/builduser/.abuild/*.pub /etc/apk/keys/
+              chown -R builduser /apkbuild /home/builduser/.abuild
+              chmod +x /apkbuild/$PKG_NAME/masque
+              su builduser -c 'cd /apkbuild/$PKG_NAME && abuild checksum && abuild -r'
+              mkdir -p /repo/$ALPINE_ARCH
+              find /home/builduser/packages -name '*.apk' -exec cp {} /repo/$ALPINE_ARCH/ \;
+            "
 
       - name: Publish to Codeberg Alpine registry
         env:
@@ -143,8 +155,8 @@ jobs:
         run: |
           for apk in repo/${{ matrix.alpine_arch }}/*.apk; do
             filename=$(basename "$apk")
-            arch=$(echo "$filename" | rev | cut -d. -f2 | rev)
-            # delete first in case it already exists (e.g. noarch from other matrix job)
+            arch="${filename##*-}"
+            arch="${arch%.apk}"
             curl --silent \
               --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
               -X DELETE \
