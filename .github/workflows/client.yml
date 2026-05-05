@@ -161,6 +161,7 @@ jobs:
         run: |
           for apk in repo/${{ matrix.alpine_arch }}/*.apk; do
             filename=$(basename "$apk")
+            echo "Uploading $filename"
             curl --silent \
               --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
               -X DELETE \

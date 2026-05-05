@@ -160,9 +160,9 @@ jobs:
           CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
           CODEBERG_OWNER: ${{ secrets.CODEBERG_OWNER }}
         run: |
-          # rename then upload
           for apk in repo/${{ matrix.alpine_arch }}/*.apk; do
             filename=$(basename "$apk")
+            echo "Uploading $filename"
             curl --silent \
               --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
               -X DELETE \
