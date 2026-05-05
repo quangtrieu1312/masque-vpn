@@ -18,7 +18,6 @@ required_files="/etc/masque/masque.conf"
 
 depend() {
 	need net
-	need dns
 	after firewall
 }
 
