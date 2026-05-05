@@ -147,12 +147,6 @@ jobs:
               mkdir -p /repo/$ALPINE_ARCH
               find /home/builduser/packages -name '*.apk' -exec cp {} /repo/$ALPINE_ARCH/ \;
             "
-          # rename and bake in architecture name into filename
-          for apk in ${{ github.workspace }}/repo/${{ matrix.alpine_arch }}/*.apk; do
-            filename=$(basename "$apk")
-            newFilename=$(printf "%s.${{ matrix.alpine_arch }}.apk" $(basename "$apk" | grep -oP '.*(?=(.apk))'))
-            sudo mv $apk ${{ github.workspace }}/repo/${{ matrix.alpine_arch }}/$newFilename
-          done
 
       - name: Publish to Codeberg Alpine registry
         env:
@@ -172,8 +166,21 @@ jobs:
               "https://codeberg.org/api/packages/$CODEBERG_OWNER/alpine/v${{ env.ALPINE_VERSION }}/testing"
           done
 
+      - name: Collect APK output for Github Release
+        run: |
+          # We need this since Codeberg does not like filename with arch
+          # While Github cannot distiguish different .apk arch
+          mkdir -p release/${{ matrix.alpine_arch }}
+          find /home/builduser/packages -name '*.apk' | while read apk; do
+            filename=$(basename "$apk")
+            # inject arch into filename before extension
+            # masque-0.1.0-r0.apk → masque-0.1.0-r0.x86_64.apk
+            newname="${filename%.apk}.${{ matrix.alpine_arch }}.apk"
+            cp "$apk" "release/${{ matrix.alpine_arch }}/$newname"
+          done
+
       - name: Attach APK to GitHub Release
         if: startsWith(github.ref, 'refs/heads/release/')
         uses: softprops/action-gh-release@v2
         with:
-          files: repo/${{ matrix.alpine_arch }}/*.apk
+          files: release/${{ matrix.alpine_arch }}/*.apk
