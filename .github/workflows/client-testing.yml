@@ -4,12 +4,6 @@ on:
   push:
     branch:
       - "feature/*"
-  workflow_dispatch:
-    inputs:
-      pkgver:
-        description: "Package version (e.g. 0.1.0)"
-        required: true
-        default: "0.1.0"
 
 env:
   ALPINE_VERSION: "3.23"
