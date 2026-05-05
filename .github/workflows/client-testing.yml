@@ -154,7 +154,7 @@ jobs:
           CODEBERG_OWNER: ${{ secrets.CODEBERG_OWNER }}
         run: |
           for apk in repo/${{ matrix.alpine_arch }}/*.apk; do
-            filename=$(basename "$apk")
+            filename=$(printf "%s.${{ matrix.alpine_arch }}.apk" $(basename "$apk" | grep -oP '.*(?=(.apk)'))
             curl --silent \
               --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
               -X DELETE \
