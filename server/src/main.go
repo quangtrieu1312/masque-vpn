@@ -491,6 +491,9 @@ func handleConn(contxt *context.Context, tunChan chan []byte,  conn *connectip.C
 
 	err := <-errChan
 	logger.Error(fmt.Sprintf("error proxying: %v", err))
+	mu.Lock()
+	delete(ipToTunChan, peerAddr)
+	mu.Unlock()
 	conn.Close()
 	<-errChan // wait for the other goroutine to finish
 	return err
