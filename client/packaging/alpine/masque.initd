@@ -24,8 +24,7 @@ depend() {
 start_pre() {
 	# Ensure log directory exists (LOG_PATH in masque.conf points here)
 	checkpath -d -m 0750 -o root:root /var/log
-	checkpath -m 0750 -o root:root /var/log/masque.log
-
+	checkpath -f -m 0750 -o root:root /var/log/masque.log
 	# Ensure cert files referenced in masque.conf are present
 	if [ ! -f /etc/masque/certs/client.crt ]; then
 		eerror "Client certificate not found: /etc/masque/certs/client.crt"
