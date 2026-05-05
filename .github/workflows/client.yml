@@ -2,8 +2,8 @@ name: Alpine APK Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - "release/*"
 
 env:
   ALPINE_VERSION: "3.23"
@@ -18,6 +18,13 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: golang:tip-alpine3.23
+    strategy:
+      matrix:
+        include:
+          - goarch: amd64
+            alpine_arch: x86_64
+          - goarch: arm64
+            alpine_arch: aarch64
     outputs:
       pkgver: ${{ steps.meta.outputs.pkgver }}
       pkgrel: ${{ steps.meta.outputs.pkgrel }}
@@ -47,21 +54,21 @@ jobs:
         env:
           CGO_ENABLED: "1"
           GOOS: linux
-          GOARCH: amd64
+          GOARCH: ${{ matrix.goarch }}
         run: |
           cd client/src
           go build \
             -buildvcs=false \
             -ldflags="-s -w -X main.version=${{ steps.meta.outputs.pkgver }}" \
             -trimpath \
-            -o ../../dist/masque \
+            -o ../../dist/masque-${{ matrix.alpine_arch }} \
             .
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: masque-bin
-          path: dist/masque
+          name: masque-bin-${{ matrix.alpine_arch }}
+          path: dist/masque-${{ matrix.alpine_arch }}
           retention-days: 1
 
   # ──────────────────────────────────────────────
@@ -72,6 +79,13 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment: PRODUCTION
+    strategy:
+      matrix:
+        include:
+          - goarch: amd64
+            alpine_arch: x86_64
+          - goarch: arm64
+            alpine_arch: aarch64
     container:
       image: alpine:3.23
     permissions:
@@ -86,7 +100,7 @@ jobs:
       - name: Download binary
         uses: actions/download-artifact@v4
         with:
-          name: masque-bin
+          name: masque-bin-${{ matrix.alpine_arch }}
           path: dist/
 
       - name: Setup build user and throwaway signing key
@@ -102,9 +116,9 @@ jobs:
           PKGREL: ${{ needs.build.outputs.pkgrel }}
         run: |
           mkdir -p /apkbuild/${{ env.PKG_NAME }}
-          cp dist/masque                      /apkbuild/${{ env.PKG_NAME }}/
-          cp client/masque.conf.template      /apkbuild/${{ env.PKG_NAME }}/
-          cp client/packaging/alpine/masque.initd    /apkbuild/${{ env.PKG_NAME }}/
+          cp dist/masque-${{ matrix.alpine_arch }} /apkbuild/${{ env.PKG_NAME }}/masque
+          cp client/masque.conf.template /apkbuild/${{ env.PKG_NAME }}/
+          cp client/packaging/alpine/masque.initd /apkbuild/${{ env.PKG_NAME }}/
           sed \
             -e "s|%%PKGVER%%|$PKGVER|g" \
             -e "s|%%PKGREL%%|$PKGREL|g" \
@@ -115,15 +129,15 @@ jobs:
 
       - name: Collect APK output
         run: |
-          mkdir -p repo/x86_64
-          find /home/builduser/packages -name '*.apk' -exec cp {} repo/x86_64/ \;
+          mkdir -p repo/${{ matrix.alpine_arch }}
+          find /home/builduser/packages -name '*.apk' -exec cp {} repo/${{ matrix.alpine_arch }}/ \;
 
       - name: Publish to Codeberg Alpine registry
         env:
           CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
           CODEBERG_OWNER: ${{ secrets.CODEBERG_OWNER }}
         run: |
-          for apk in repo/x86_64/*.apk; do
+          for apk in repo/${{ matrix.alpine_arch }}/*.apk; do
             curl --fail \
               --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
               --upload-file "$apk" \
@@ -131,7 +145,7 @@ jobs:
           done
 
       - name: Attach APK to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/heads/release/')
         uses: softprops/action-gh-release@v2
         with:
-          files: repo/x86_64/*.apk
+          files: repo/${{ matrix.alpine_arch }}/*.apk
