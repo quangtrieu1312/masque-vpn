@@ -8,6 +8,7 @@ on:
 env:
   ALPINE_VERSION: "3.23"
   PKG_NAME: masque
+  CODEBERG_REPO: "testing"
 
 jobs:
   # ──────────────────────────────────────────────
@@ -155,13 +156,13 @@ jobs:
         run: |
           for apk in repo/${{ matrix.alpine_arch }}/*.apk; do
             filename=$(basename "$apk")
-            echo "Uploading $filename"
+            echo "Uploading $filename. This will overwrite upstream file if there is one."
             curl --silent \
               --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
               -X DELETE \
-              "https://codeberg.org/api/packages/$CODEBERG_OWNER/alpine/v${{ env.ALPINE_VERSION }}/testing/${{ matrix.alpine_arch }}/$filename" || true
+              "https://codeberg.org/api/packages/$CODEBERG_OWNER/alpine/v${{ env.ALPINE_VERSION }}/${{ env.CODEBERG_REPO }}/${{ matrix.alpine_arch }}/$filename" || true
             curl --fail \
               --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
               --upload-file "$apk" \
-              "https://codeberg.org/api/packages/$CODEBERG_OWNER/alpine/v${{ env.ALPINE_VERSION }}/testing"
+              "https://codeberg.org/api/packages/$CODEBERG_OWNER/alpine/v${{ env.ALPINE_VERSION }}/${{ env.CODEBERG_REPO }}"
           done

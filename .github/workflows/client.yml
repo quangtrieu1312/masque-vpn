@@ -8,6 +8,7 @@ on:
 env:
   ALPINE_VERSION: "3.23"
   PKG_NAME: masque
+  CODEBERG_REPO: "main"
 
 jobs:
   # ──────────────────────────────────────────────
@@ -80,7 +81,7 @@ jobs:
   package:
     name: Package & publish APK (${{ matrix.alpine_arch }})
     needs: build
-    environment: TESTING
+    environment: PRODUCTION
     strategy:
       matrix:
         include:
@@ -155,15 +156,11 @@ jobs:
         run: |
           for apk in repo/${{ matrix.alpine_arch }}/*.apk; do
             filename=$(basename "$apk")
-            echo "Uploading $filename"
-            curl --silent \
-              --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
-              -X DELETE \
-              "https://codeberg.org/api/packages/$CODEBERG_OWNER/alpine/v${{ env.ALPINE_VERSION }}/testing/$arch/$filename" || true
+            echo "Uploading $filename. This will fail if there is an existing upstream file."
             curl --fail \
               --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
               --upload-file "$apk" \
-              "https://codeberg.org/api/packages/$CODEBERG_OWNER/alpine/v${{ env.ALPINE_VERSION }}/testing"
+              "https://codeberg.org/api/packages/$CODEBERG_OWNER/alpine/v${{ env.ALPINE_VERSION }}/${{ env.CODEBERG_REPO }}"
           done
 
       - name: Collect APK output for Github Release
