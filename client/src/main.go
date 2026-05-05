@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -28,72 +26,32 @@ import (
 	"github.com/vishvananda/netlink"
 	"github.com/yosida95/uritemplate/v3"
 
-	"github.com/quangtrieu1312/masque-vpn/client/constants"
     "github.com/quangtrieu1312/masque-vpn/client/utility"
     "github.com/quangtrieu1312/masque-vpn/client/config"
     "github.com/quangtrieu1312/masque-vpn/client/logger"
 )
 
-func parseConfig(ctx *context.Context) {
-    var configPath string
-    flag.StringVar(&configPath,"f", "/etc/masque/masque.conf", "Path to config file")
-    file, err := os.Open(configPath)
-    if err != nil {
-        log.Fatalf("Failed to open config file %v: %v", configPath, err)
-        os.Exit(1)
-    }
-    defer file.Close()
-    scanner := bufio.NewScanner(file)
-    for scanner.Scan() {
-        data := strings.Trim(scanner.Text(), " \t")
-        if len(data) == 0 {
-            continue
-        }
-        isKey := true
-        k := ""
-        v := ""
-        for pos, char := range data {
-            if (pos == 0 && char == '#') {
-                continue
-            }
-            if (isKey && char == '=') {
-                isKey = false
-                continue
-            }
-            if (isKey) {
-                k+=string(char)
-            } else {
-                v+=string(char)
-            }
-        }
-        if (k == "") {
-            log.Fatalf("Invalid config format")
-        }
-        (*ctx) = context.WithValue(*ctx, k, v)
-    }
-}
-
 func PreUp(ctx *context.Context) {
-    LogInfo("Exec pre up")
+    logger.LogInfo("Exec pre up")
     cmd := exec.Command("/sbin/ip", "rule", "add", "not", "to", (*ctx).Value("SERVER_IP").(string), "table", "54321")
-    LogInfo(fmt.Sprintf("Running command: /sbin/ip"))
+    logger.LogInfo(fmt.Sprintf("Running command: /sbin/ip"))
     _, err := cmd.Output()
     if err != nil {
-        LogFatal(fmt.Sprintf("Error running pre up command: %v", err))
+        logger.LogFatal(fmt.Sprintf("Error running pre up command: %v", err))
     }
 }
 
 func PostUp() {
-    LogInfo("Exec post up")
+    logger.LogInfo("Exec post up")
 }
 
 func PostDown() {
-    LogInfo("Exec post down")
+    logger.LogInfo("Exec post down")
     cmd := exec.Command("/sbin/ip", "rule", "del", "table", "54321")
-    LogInfo(fmt.Sprintf("Running command: /sbin/ip"))
+    logger.LogInfo(fmt.Sprintf("Running command: /sbin/ip"))
     _, err := cmd.Output()
     if err != nil {
-        LogFatal(fmt.Sprintf("Error running post down command: %v", err))
+        logger.LogFatal(fmt.Sprintf("Error running post down command: %v", err))
     }
 }
 
@@ -103,8 +61,9 @@ func main() {
     config.Load(&ctx)
     logLevel := ctx.Value("LOG_LEVEL").(string)
     logPath := ctx.Value("LOG_PATH").(string)
-    UpdateLoggerInstance(ConvertStringToLogLevel(logLevel), logPath)
-    f, err := os.OpenFile(GetLogPath(), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+    logger.UpdateLogLevelName(logLevel)
+    logger.UpdateLogPath(logPath)
+    f, err := os.OpenFile(logger.GetLogPath(), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
     if err != nil {
         log.Fatalf("Error opening file: %v", err)
     } else {
@@ -119,7 +78,7 @@ func main() {
         host := serverInfo[:portIndex]
         port, err := strconv.Atoi(serverInfo[portIndex+1:])
         if err != nil {
-		    LogFatal(fmt.Sprintf("Failed to parse server port: %v", err))
+		    logger.LogFatal(fmt.Sprintf("Failed to parse server port: %v", err))
             os.Exit(1)
         }
         serverHost = host
@@ -127,9 +86,9 @@ func main() {
     }
     var serverIp netip.Addr
     if ip, err := netip.ParseAddr(serverHost); err != nil {
-        LogDebug(fmt.Sprintf("Resolving %v", serverHost))
+        logger.LogDebug(fmt.Sprintf("Resolving %v", serverHost))
         if ips, err := net.LookupIP(serverHost); err != nil {
-            LogFatal(fmt.Sprintf("Failed to resolve server FQDN: %v", err))
+            logger.LogFatal(fmt.Sprintf("Failed to resolve server FQDN: %v", err))
             os.Exit(1)
         } else {
             serverIp = netip.MustParseAddr(ips[0].String())
@@ -138,11 +97,11 @@ func main() {
         serverIp = ip
     }
     ctx = context.WithValue(ctx, "SERVER_IP", serverIp.String())
-    LogInfo(fmt.Sprintf("Connecting to %v", serverIp))
+    logger.LogInfo(fmt.Sprintf("Connecting to %v", serverIp))
 	serverAddr := netip.AddrPortFrom(serverIp, uint16(serverPort))
     enableKeyLog, err := strconv.ParseBool(ctx.Value("ENABLE_KEY_LOG").(string))
     if err != nil {
-		LogError(fmt.Sprintf("Cannot parse ENABLE_KEY_LOG config, default to `false`"))
+		logger.LogError(fmt.Sprintf("Cannot parse ENABLE_KEY_LOG config, default to `false`"))
         enableKeyLog = false
     }
     keyLogPath := ctx.Value("KEY_LOG_PATH").(string)
@@ -152,15 +111,15 @@ func main() {
         for {
             select {
             case cerr := <-errChan:
-                LogError(fmt.Sprintf("Encounter error: %v", cerr))
+                logger.LogError(fmt.Sprintf("Encounter error: %v", cerr))
                 cancel()
                 return
             case isRunning := <- tunneling:
                 if (isRunning) {
-                    LogInfo("Masque is up")
+                    logger.LogInfo("Masque is up")
                     PostUp()
                 } else {
-                    LogInfo("Masque is down")
+                    logger.LogInfo("Masque is down")
                     PostDown()
                     cancel()
                 }
@@ -170,30 +129,30 @@ func main() {
     }(ctx)
     go func(contxt context.Context) {
         errorThreshold := 5
-        LogDebug(fmt.Sprintf("Retry threshold = %d", errorThreshold))
+        logger.LogDebug(fmt.Sprintf("Retry threshold = %d", errorThreshold))
         for {
-            LogTrace(fmt.Sprintf("Number of retry attempts left = %d", errorThreshold))
+            logger.LogTrace(fmt.Sprintf("Number of retry attempts left = %d", errorThreshold))
             if errorThreshold < 0 {
                 errChan <- fmt.Errorf("Out of attempts")
             }
 	        routes, localPrefixes, ipconn, err := establishMASQUEConn(ctx, serverAddr, serverHost, enableKeyLog, keyLogPath)
 	        if err != nil {
-                LogError(fmt.Sprintf("Failed to establish MASQUE connection: %v", err))
+                logger.LogError(fmt.Sprintf("Failed to establish MASQUE connection: %v", err))
                 errorThreshold--
                 continue
 	        }
             dev, derr := establishTunTapAndRoutes(ctx, routes, localPrefixes)
             if derr != nil {
-                LogError(fmt.Sprintf("Failed to establish TUN/TAP device or VPN routes: %v", derr))
+                logger.LogError(fmt.Sprintf("Failed to establish TUN/TAP device or VPN routes: %v", derr))
                 errorThreshold--
                 continue
             }
-	        LogDebug(fmt.Sprintf("Created TUN device: %s in the background", dev.Name()))
+	        logger.LogDebug(fmt.Sprintf("Created TUN device: %s in the background", dev.Name()))
             eChan := make(chan error) 
             go func() {
                 cerr := <-eChan
                 errorThreshold--
-                LogError(fmt.Sprintf("Tunneling error: %v", cerr))
+                logger.LogError(fmt.Sprintf("Tunneling error: %v", cerr))
                 ipconn.Close()
                 dev.Close()
             }()
@@ -244,13 +203,13 @@ func establishMASQUEConn(ctx context.Context, serverAddr netip.AddrPort, serverF
     if enableKeyLog {
         keyLogPath := ctx.Value("KEY_LOG_PATH").(string)
         if keyLogPath == "" {
-		    LogError(fmt.Sprintf("Cannot parse KEY_LOG_PATH config, default to `keys.txt`"))
+		    logger.LogError(fmt.Sprintf("Cannot parse KEY_LOG_PATH config, default to `keys.txt`"))
             keyLogPath = "keys.txt"
         }
         keyLog, err := os.Create(keyLogPath)
 	    defer keyLog.Close()
 	    if err != nil {
-		    LogError(fmt.Sprintf("failed to create key log file: %v", err))
+		    logger.LogError(fmt.Sprintf("failed to create key log file: %v", err))
 	    }
         tlsConf.KeyLogWriter = keyLog
     }
@@ -280,7 +239,7 @@ func establishMASQUEConn(ctx context.Context, serverAddr netip.AddrPort, serverF
 	if rsp.StatusCode != http.StatusOK {
 		return nil, nil, nil, fmt.Errorf("unexpected status code: %d", rsp.StatusCode)
 	}
-	LogDebug(fmt.Sprintf("connected to VPN server: %s", serverAddr))
+	logger.LogDebug(fmt.Sprintf("connected to VPN server: %s", serverAddr))
 
 	routes, err := ipconn.Routes(ctx)
 	if err != nil {
@@ -299,14 +258,14 @@ func establishTunTapAndRoutes(ctx context.Context, routes []connectip.IPRoute, l
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TUN device: %w", err)
 	}
-	LogDebug(fmt.Sprintf("created TUN device: %s", dev.Name()))
+	logger.LogDebug(fmt.Sprintf("created TUN device: %s", dev.Name()))
 
 	link, err := netlink.LinkByName(dev.Name())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get TUN interface: %w", err)
 	}
 	for _, p := range localPrefixes {
-		if err := netlink.AddrAdd(link, &netlink.Addr{IPNet: PrefixToIPNet(p)}); err != nil {
+		if err := netlink.AddrAdd(link, &netlink.Addr{IPNet: utility.PrefixToIPNet(p)}); err != nil {
 			return nil, fmt.Errorf("failed to add address assigned by peer %s: %w", p, err)
 		}
 	}
@@ -316,10 +275,10 @@ func establishTunTapAndRoutes(ctx context.Context, routes []connectip.IPRoute, l
 
     PreUp(&ctx)
 	for _, route := range routes {
-		LogDebug(fmt.Sprintf("adding routes for %s - %s (protocol: %d)", route.StartIP, route.EndIP, route.IPProtocol))
+		logger.LogDebug(fmt.Sprintf("adding routes for %s - %s (protocol: %d)", route.StartIP, route.EndIP, route.IPProtocol))
 		for _, prefix := range route.Prefixes() {
             cmd := exec.Command("/sbin/ip", "route", "add", prefix.String() , "dev", dev.Name(), "table", "54321")
-            LogInfo(fmt.Sprintf("Adding route: %v", prefix.String()))
+            logger.LogInfo(fmt.Sprintf("Adding route: %v", prefix.String()))
             _, err := cmd.Output()
             if err != nil {
                 return nil, fmt.Errorf("Failed to add route: %v", err)
@@ -338,7 +297,7 @@ func tunnel(ctx context.Context, ipconn *connectip.Conn, dev *water.Interface, i
 				errChan <- fmt.Errorf("Failed to read from QUIC tunnel: %w", rerr)
                 isRunningChan <- false
             }
-            LogTrace(fmt.Sprintf("Read %d bytes from tunnel: %x", n, b[:n]))
+            logger.LogTrace(fmt.Sprintf("Read %d bytes from tunnel: %x", n, b[:n]))
             _, werr := dev.Write(b[:n])
             if werr != nil {
 				errChan <- fmt.Errorf("Failed to write to TUN/TAP device: %w", werr)
@@ -355,14 +314,14 @@ func tunnel(ctx context.Context, ipconn *connectip.Conn, dev *water.Interface, i
                 errChan <- fmt.Errorf("Failed to read from TUN/TAP device: %w", rerr)
                 isRunningChan <- false
 			}
-            LogTrace(fmt.Sprintf("Read %d bytes from TUN/TAP device: %x", n, b[:n]))
+            logger.LogTrace(fmt.Sprintf("Read %d bytes from TUN/TAP device: %x", n, b[:n]))
 			icmp, werr := ipconn.WritePacket(b[:n])
             if werr != nil {
 				errChan <- fmt.Errorf("Failed to write to QUIC tunnel: %w", werr)
                 isRunningChan <- false
             }
 			if len(icmp) > 0 {
-				LogTrace(fmt.Sprintf("Sending ICMP packet on %s", dev.Name()))
+				logger.LogTrace(fmt.Sprintf("Sending ICMP packet on %s", dev.Name()))
 				if _, err := dev.Write(icmp); err != nil {
                     errChan <- fmt.Errorf("Failed to write ICMP packet: %v", err)
                     isRunningChan <- false
