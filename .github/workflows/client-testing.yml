@@ -73,7 +73,7 @@ jobs:
     name: Package & publish APK
     needs: build
     runs-on: ubuntu-latest
-    environment: PROD
+    environment: TESTING
     container:
       image: alpine:3.23
     permissions:
