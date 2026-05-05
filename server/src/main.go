@@ -338,7 +338,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 	p := connectip.Proxy{}
 	mux := http.NewServeMux()
     ipToTunChan = make(map[string](chan []byte))
-    mu = &sync.RWMutex{}
+    mu = sync.RWMutex{}
     go func() {
         for {
 	        b := make([]byte, 1500)
