@@ -12,7 +12,7 @@ on:
         default: "0.1.0"
 
 env:
-  ALPINE_VERSION: "3.22"
+  ALPINE_VERSION: "3.23"
   PKG_NAME: masque
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
     name: Build Alpine binary
     runs-on: ubuntu-latest
     container:
-      image: golang:tip-alpine3.22
+      image: golang:tip-alpine3.23
     outputs:
       pkgver: ${{ steps.meta.outputs.pkgver }}
       pkgrel: ${{ steps.meta.outputs.pkgrel }}
@@ -75,7 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: PROD
     container:
-      image: alpine:3.22
+      image: alpine:3.23
     permissions:
       contents: write
 
