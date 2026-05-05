@@ -136,7 +136,7 @@ jobs:
             -v "${{ github.workspace }}/apkbuild:/apkbuild" \
             -v "${{ github.workspace }}/repo:/repo" \
             alpine:3.23 sh -c "
-              apk add --no-cache abuild doas
+              apk update && apk add --no-cache abuild doas
               adduser -D builduser
               addgroup builduser abuild
               su builduser -c 'abuild-keygen -a -n'
