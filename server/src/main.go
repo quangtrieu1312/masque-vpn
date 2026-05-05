@@ -41,7 +41,7 @@ import (
 
 var serverSocketSend int
 var tunTapDevice *water.Interface
-var mu sync.RWMutex
+var mu *sync.RWMutex
 var ipToTunChan map[string](chan []byte)
 
 func main() {
@@ -338,7 +338,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 	p := connectip.Proxy{}
 	mux := http.NewServeMux()
     ipToTunChan = make(map[string](chan []byte))
-    mu = sync.RWMutex{}
+    mu = &sync.RWMutex{}
     go func() {
         for {
 	        b := make([]byte, 1500)
