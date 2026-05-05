@@ -1,4 +1,4 @@
-name: Alpine APK Release
+name: Alpine APK Testing
 
 on:
   push:
