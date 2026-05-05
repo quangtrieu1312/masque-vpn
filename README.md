@@ -7,7 +7,7 @@ A VPN implementation built on top of the [MASQUE](https://ietf-wg-masque.github.
 ## How it works
 
 ```
-Client                         Server
+Client (masque)                Server (masqued)
   │                              │
   │── QUIC (UDP/443) ──────────► │
   │   HTTP/3 CONNECT-IP          │
@@ -18,7 +18,7 @@ Client                         Server
   │                           raw socket → WAN
 ```
 
-The client establishes a QUIC connection to the server, upgrades it to an HTTP/3 `CONNECT-IP` session, and receives a `/32` IP address and a set of routes from the server. The server creates a TUN device and multiplexes packets from all connected clients using a per-client channel map keyed by assigned IP.
+The client (`masque`) establishes a QUIC connection to the server (`masqued`), upgrades it to an HTTP/3 `CONNECT-IP` session, and receives a `/32` IP address and a set of routes from the server. The server creates a TUN device and multiplexes packets from all connected clients using a per-client channel map keyed by assigned IP.
 
 Client identity is derived from the **Common Name** of the client's mTLS certificate, which is set to the client's database ID at cert generation time. This is how the server looks up per-client routes at connection time.
 
@@ -46,6 +46,7 @@ masque-vpn/
     │   ├── domain/             # Data models (Client, Role, Resource, DHCP)
     │   ├── migration/          # Schema migrations
     │   ├── repository/         # SQL queries
+    │   ├── request/            # API request types
     │   ├── service/            # Business logic
     │   └── utility/            # IP math, raw socket helpers
     ├── scripts/
@@ -113,7 +114,7 @@ On first boot, `run.sh` automatically:
 2. Generates the client CA
 3. Runs database migrations (SQLite, schema v1)
 4. Enables IP forwarding and disables reverse-path filtering
-5. Starts the MASQUE daemon and the management Unix socket
+5. Starts `masqued` (the MASQUE daemon) and the management Unix socket
 
 ---
 
@@ -134,6 +135,8 @@ server/certs/client/alice/bundle.zip
 ```
 
 The zip contains `client.crt`, `client.key`, and `ca.crt` (a symlink to the server CA).
+
+> **Note:** `genClient` also automatically creates a role named `alice` and assigns it to the client. Use the management API to assign resources to that role to grant the client access to CIDR prefixes.
 
 ### 2. Copy certs to the client machine
 
@@ -171,7 +174,7 @@ Edit `/etc/masque/masque.conf`:
 **Binary (bare metal / Alpine APK):**
 
 ```sh
-sudo masque-vpn-client -f /etc/masque/masque.conf
+sudo masque -f /etc/masque/masque.conf
 ```
 
 **Docker:**
@@ -187,61 +190,84 @@ The `docker-compose.yml` shows an example of two simultaneous clients (`client1`
 
 ## Management API
 
-The server exposes an HTTP API over a Unix socket at `/var/run/masqued.sock`. All management tooling (including `genClient`) talks to this socket. The API surface is:
+The server (`masqued`) exposes an HTTP API over a Unix socket at `/var/run/masqued.sock`. All management tooling (including `genClient`) communicates through this socket. You can reach it directly with `curl --unix-socket`.
 
 ### Clients
 
-| Method | Path | Query | Description |
-|--------|------|-------|-------------|
+| Method | Path | Body / Query | Description |
+|--------|------|--------------|-------------|
 | `GET` | `/client` | | List all clients |
-| `POST` | `/client` | `?type=upsert` | Create or update clients by name |
-| `POST` | `/client` | `?type=assign-roles` | Assign roles to clients |
-| `POST` | `/client` | `?type=unassign-roles` | Remove roles from clients |
-| `DELETE` | `/client` | | Delete clients by ID |
+| `POST` | `/client?type=upsert` | `{"names": ["alice"]}` | Create or update clients by name. Also auto-creates a same-named role and assigns it to each new client. Returns `{"ids": [...]}`. |
+| `POST` | `/client?type=assign` | `{"client_ids": [...], "role_ids": [...]}` | Assign roles to clients |
+| `POST` | `/client?type=unassign` | `{"client_ids": [...], "role_ids": [...]}` | Remove roles from clients |
+| `DELETE` | `/client` | `{"ids": [...]}` | Delete clients by ID. Reclaims their IPs back into the DHCP pool. |
 | `GET` | `/client/{id}` | | Get a specific client |
-| `POST` | `/client/{id}` | `?type=update-name` | Rename a client |
+| `POST` | `/client/{id}` | `{"name": "new-name"}` | Rename a client |
 
 ### Roles
 
-| Method | Path | Query | Description |
-|--------|------|-------|-------------|
+| Method | Path | Body / Query | Description |
+|--------|------|--------------|-------------|
 | `GET` | `/role` | | List all roles |
-| `POST` | `/role` | `?type=upsert` | Create or update roles |
-| `POST` | `/role` | `?type=assign-resources` | Assign resources to roles |
-| `POST` | `/role` | `?type=unassign-resources` | Remove resources from roles |
-| `DELETE` | `/role` | | Delete roles by ID |
+| `POST` | `/role?type=upsert` | `{"names": ["engineering"]}` | Create or update roles by name |
+| `POST` | `/role?type=client` | `{"client_id": 1}` | List all roles assigned to a client |
+| `POST` | `/role?type=assign` | `{"role_ids": [...], "resource_ids": [...]}` | Assign resources to roles |
+| `POST` | `/role?type=unassign` | `{"role_ids": [...], "resource_ids": [...]}` | Remove resources from roles |
+| `DELETE` | `/role` | `{"ids": [...]}` | Delete roles by ID |
 | `GET` | `/role/{id}` | | Get a specific role |
-| `POST` | `/role/{id}` | `?type=update-name` | Rename a role |
+| `POST` | `/role/{id}` | `{"name": "new-name"}` | Rename a role |
 
 ### Resources
 
-Resources are CIDR prefixes that the server will advertise as routes to clients that hold a role granting those resources.
+Resources are CIDR prefixes that the server advertises as routes to any client holding a role that grants those resources.
 
-| Method | Path | Query | Description |
-|--------|------|-------|-------------|
+| Method | Path | Body / Query | Description |
+|--------|------|--------------|-------------|
 | `GET` | `/resource` | | List all resources |
-| `POST` | `/resource` | `?type=upsert` | Create or update resources |
-| `DELETE` | `/resource` | | Delete resources by ID |
+| `POST` | `/resource?type=upsert` | `{"resources": [{"name": "corp-net", "value": "10.0.0.0/8"}]}` | Create or update resources. `value` is the CIDR prefix. On name conflict, updates `value`. |
+| `POST` | `/resource?type=client` | `{"client_id": 1}` | List all resources reachable by a client (via its roles) |
+| `DELETE` | `/resource` | `{"ids": [...]}` | Delete resources by ID |
 | `GET` | `/resource/{id}` | | Get a specific resource |
-| `POST` | `/resource/{id}` | `?type=update-name` | Rename a resource |
+| `POST` | `/resource/{id}` | `{"name": "new-name"}` | Rename a resource |
 
 ### DHCP
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/dhcp` | Get the current IP pool range |
-| `PUT` | `/dhcp` | Update the IP pool range |
+| Method | Path | Body | Description |
+|--------|------|------|-------------|
+| `GET` | `/dhcp` | | Get the current available IP ranges |
+| `PUT` | `/dhcp` | `{"fist_ip": <int>, "last_ip": <int>}` | Replace the IP pool (integer-encoded IPv4 addresses) |
 
-**Example — create a client and list all clients:**
+### Examples
 
 ```sh
-# Create
+# Create client "alice" (also auto-creates and assigns role "alice")
 curl --unix-socket /var/run/masqued.sock \
   -X POST 'http://masqued/client?type=upsert' \
   -d '{"names": ["alice"]}'
+# → {"ids":[1]}
 
-# List
+# List all clients
 curl --unix-socket /var/run/masqued.sock http://masqued/client
+
+# Create a resource (CIDR prefix)
+curl --unix-socket /var/run/masqued.sock \
+  -X POST 'http://masqued/resource?type=upsert' \
+  -d '{"resources": [{"name": "corp-net", "value": "10.0.0.0/8"}]}'
+
+# Assign resource 1 to role 1 (alice's auto-created role)
+curl --unix-socket /var/run/masqued.sock \
+  -X POST 'http://masqued/role?type=assign' \
+  -d '{"role_ids": [1], "resource_ids": [1]}'
+
+# Check what resources alice can reach
+curl --unix-socket /var/run/masqued.sock \
+  -X POST 'http://masqued/resource?type=client' \
+  -d '{"client_id": 1}'
+
+# Delete client 1
+curl --unix-socket /var/run/masqued.sock \
+  -X DELETE 'http://masqued/client' \
+  -d '{"ids": [1]}'
 ```
 
 ---
@@ -252,12 +278,14 @@ curl --unix-socket /var/run/masqued.sock http://masqued/client
 Client ──(many-to-many)──► Role ──(many-to-many)──► Resource (CIDR prefix)
 ```
 
-When a client connects, the server:
+When a client connects, `masqued`:
 1. Looks up the client's roles via the mTLS certificate CN (client DB ID)
 2. Collects all resources (CIDR prefixes) associated with those roles
 3. Advertises those prefixes as routes to the client via `CONNECT-IP`
 
-A client with no roles assigned receives no routes and cannot tunnel any traffic.
+A client with no roles assigned (or roles with no resources) receives no routes and cannot tunnel any traffic.
+
+When a client is created via `genClient` or `POST /client?type=upsert`, a role with the same name is automatically created and assigned to it. This default role starts with no resources — assign CIDR resources to it to grant access.
 
 ---
 
@@ -279,25 +307,24 @@ The server trusts the Client CA and requires client certificates (`RequireAndVer
 
 - All keys are Ed25519. No RSA, no ECDSA.
 - The `ENABLE_KEY_LOG` option writes TLS session keys to disk for Wireshark-based debugging. **Never enable this in production.**
-- Raw sockets require `CAP_NET_ADMIN` and `CAP_NET_RAW`. The server binary has `cap_net_admin+ep` applied at runtime by `run.sh`.
+- Raw sockets require `CAP_NET_ADMIN` and `CAP_NET_RAW`. The `masqued` binary has `cap_net_admin+ep` applied at runtime by `run.sh`.
 
 ---
 
-
 ## Troubleshooting
 
-**Client fails to connect with `failed to dial QUIC connection`**
+**`masque` fails to connect with `failed to dial QUIC connection`**
 - Confirm port 443/UDP is open on the server firewall
 - Confirm `SERVER` in `masque.conf` resolves to the correct IP
 - Check that `ca.crt` on the client matches the server's CA
 
 **Client connects but has no routes / no internet**
 - The client may have no roles assigned, or the roles have no resources
-- Use `genClient` and the management API to assign roles and CIDR resources
+- Use `genClient` and the management API to assign CIDR resources to the client's role
 
 **`Failed to get available IP`**
 - The DHCP pool may be exhausted
 - Check the pool with `GET /dhcp` and expand it with `PUT /dhcp` if needed
 
 **`setsockopt(SOL_SOCKET, SO_MARK) — process needs CAP_NET_ADMIN`**
-- The server binary must have `CAP_NET_ADMIN`. In Docker this is provided by `cap_add: NET_ADMIN`. Bare-metal: `sudo setcap cap_net_admin+ep ./bin`
+- The `masqued` binary must have `CAP_NET_ADMIN`. In Docker this is provided by `cap_add: NET_ADMIN`. Bare-metal: `sudo setcap cap_net_admin+ep ./bin`
