@@ -148,10 +148,10 @@ jobs:
               find /home/builduser/packages -name '*.apk' -exec cp {} /repo/$ALPINE_ARCH/ \;
             "
           # rename and bake in architecture name into filename
-          for apk in repo/${{ matrix.alpine_arch }}/*.apk; do
+          for apk in ${{ github.workspace }}/repo/${{ matrix.alpine_arch }}/*.apk; do
             filename=$(basename "$apk")
             newFilename=$(printf "%s.${{ matrix.alpine_arch }}.apk" $(basename "$apk" | grep -oP '.*(?=(.apk))'))
-            mv repo/${{ matrix.alpine_arch }}/$filename repo/${{ matrix.alpine_arch }}/$newFilename
+            mv $apk ${{ github.workspace }}/repo/${{ matrix.alpine_arch }}/$newFilename
           done
 
       - name: Publish to Codeberg Alpine registry
@@ -161,8 +161,6 @@ jobs:
         run: |
           for apk in repo/${{ matrix.alpine_arch }}/*.apk; do
             filename=$(basename "$apk")
-            arch="${filename##*-}"
-            arch="${arch%.apk}"
             curl --silent \
               --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
               -X DELETE \
