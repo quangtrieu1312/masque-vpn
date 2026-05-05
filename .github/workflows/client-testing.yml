@@ -158,7 +158,7 @@ jobs:
             curl --silent \
               --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
               -X DELETE \
-              "https://codeberg.org/api/packages/$CODEBERG_OWNER/alpine/v${{ env.ALPINE_VERSION }}/testing/$filename" || true
+              "https://codeberg.org/api/packages/$CODEBERG_OWNER/alpine/v${{ env.ALPINE_VERSION }}/testing/${{ matrix.alpine_arch }}/$filename" || true
             curl --fail \
               --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
               --upload-file "$apk" \
