@@ -27,6 +27,11 @@ import (
 	"github.com/songgao/water"
 	"github.com/vishvananda/netlink"
 	"github.com/yosida95/uritemplate/v3"
+
+	"github.com/quangtrieu1312/masque-vpn/client/constants"
+    "github.com/quangtrieu1312/masque-vpn/client/utility"
+    "github.com/quangtrieu1312/masque-vpn/client/config"
+    "github.com/quangtrieu1312/masque-vpn/client/logger"
 )
 
 func parseConfig(ctx *context.Context) {
@@ -95,7 +100,7 @@ func PostDown() {
 func main() {
     ctx, cancel := context.WithCancel(context.Background())
     defer cancel()
-    parseConfig(&ctx)
+    config.Load(&ctx)
     logLevel := ctx.Value("LOG_LEVEL").(string)
     logPath := ctx.Value("LOG_PATH").(string)
     UpdateLoggerInstance(ConvertStringToLogLevel(logLevel), logPath)
