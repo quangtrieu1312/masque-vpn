@@ -367,7 +367,13 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
         }
     }()
 	mux.HandleFunc("/vpn", func(w http.ResponseWriter, r *http.Request) {
-        clientId := r.TLS.PeerCertificates[0].Subject.CommonName
+        commonName := r.TLS.PeerCertificates[0].Subject.CommonName
+    	clientId, err := strconv.ParseInt(commonName, 10, 64)
+		if err != nil {
+			logger.Info(fmt.Sprintf("Got invalid TLS common name %v: %v", commonName, err))
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		logger.Debug(fmt.Sprintf("Handle new HTTP client %v", clientId))
         conCtx := context.WithValue(ctx, "clientId", clientId)
 		req, err := connectip.ParseRequest(r, template)
@@ -389,6 +395,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 
 		if err := handleConn(&conCtx, make(chan []byte), conn, ipProtocol); err != nil {
 			logger.Error(fmt.Sprintf("failed to handle connection: %v", err))
+			return
 		}
 	})
 

@@ -97,7 +97,7 @@ func GetClientResources(clientID int64) (*[]domain.Resource, error) {
     return &resources, nil
 }
 
-func UpsertResources(resources []request.ResourceRequest) (*[]int64, error) {
+func UpsertResources(resources []request.Resource) (*[]int64, error) {
     tx, err := db.GetConnection().Begin()
     if err != nil {
         return nil, err

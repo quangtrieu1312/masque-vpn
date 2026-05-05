@@ -12,82 +12,10 @@ import (
 	"github.com/quangtrieu1312/masque-vpn/server/constants"
 	"github.com/quangtrieu1312/masque-vpn/server/logger"
 	"github.com/quangtrieu1312/masque-vpn/server/request"
+	"github.com/quangtrieu1312/masque-vpn/server/response"
 	"github.com/quangtrieu1312/masque-vpn/server/service"
 )
 
-
-type DeleteClientsRequest struct {
-    IDs []int64 `json:"ids"`
-}
-
-type UpsertClientsRequest struct {
-    Names []string `json:"names"`
-}
-
-type UpsertClientsResponse struct {
-    IDs []int64 `json:"ids"`
-}
-
-type AssignRolesToClientsRequest struct {
-    ClientIDs []int64 `json:"client_ids"`
-    RoleIDs []int64 `json:"role_ids"`
-}
-
-type UnassignRolesToClientsRequest struct {
-    ClientIDs []int64 `json:"client_ids"`
-    RoleIDs []int64 `json:"role_ids"`
-}
-
-type UpdateClientNameRequest struct {
-    Name string `json:"name"`
-}
-
-type DeleteRolesRequest struct {
-    IDs []int64 `json:"ids"`
-}
-
-type UpsertRolesRequest struct {
-    Names []string `json:"names"`
-}
-
-type AssignResourcesToRolesRequest struct {
-    ResourceIDs []int64 `json:"resource_ids"`
-    RoleIDs []int64 `json:"role_ids"`
-}
-
-type UnassignResourcesToRolesRequest struct {
-    ResourceIDs []int64 `json:"resource_ids"`
-    RoleIDs []int64 `json:"role_ids"`
-}
-
-type FetchClientResourcesRequest struct {
-    ClientID int64 `json:"client_id"`
-}
-
-type FetchClientRolesRequest struct {
-    ClientID int64 `json:"client_id"`
-}
-
-type UpdateRoleNameRequest struct {
-    Name string `json:"name"`
-}
-
-type DeleteResourcesRequest struct {
-    IDs []int64 `json:"ids"`
-}
-
-type UpsertResourcesRequest struct {
-    Resources []request.ResourceRequest `json:"resources"`
-}
-
-type UpdateResourceNameRequest struct {
-    Name string `json:"name"`
-}
-
-type ResetDHCPRequest struct {
-    FirstIP int64 `json:"fist_ip"`
-    LastIP int64 `json:"last_ip"`
-}
 func RunManagementService(ctx context.Context) {
     fd, err := net.Listen("unix", constants.MANAGEMENT_SOCKET_PATH)
     if err != nil {
@@ -119,7 +47,7 @@ func RunManagementService(ctx context.Context) {
             }
             break
         case http.MethodPost:
-            var body UpdateClientNameRequest
+            var body request.UpdateClientName
             err := json.NewDecoder(r.Body).Decode(&body)
             if err != nil {
                 logger.Debug(fmt.Sprintf("Invalid POST /client/%v: %v", id, err))
@@ -165,7 +93,7 @@ func RunManagementService(ctx context.Context) {
             requestType := params.Get("type")
             switch requestType {
             case "upsert":
-                var body UpsertClientsRequest
+                var body request.UpsertClients
                 err := json.NewDecoder(r.Body).Decode(&body)
                 if err != nil {
                     logger.Debug(fmt.Sprintf("Invalid POST /client: %v", err))
@@ -197,7 +125,7 @@ func RunManagementService(ctx context.Context) {
                         w.WriteHeader(http.StatusInternalServerError)
 						return
 					}
-					responseBody := UpsertClientsResponse{*clientIDs}
+					responseBody := response.UpsertClients{*clientIDs}
                     jsonBytes, err := json.Marshal(responseBody)
                     if err != nil {
                         logger.Debug(fmt.Sprintf("Cannot marshal clientIDs to json: %v", err))
@@ -213,7 +141,7 @@ func RunManagementService(ctx context.Context) {
                 }
                 break
             case "assign":
-                var body AssignRolesToClientsRequest
+                var body request.AssignRolesToClients
                 err := json.NewDecoder(r.Body).Decode(&body)
                 if err != nil {
                     logger.Debug(fmt.Sprintf("Invalid POST /client: %v", err))
@@ -229,7 +157,7 @@ func RunManagementService(ctx context.Context) {
                 }
                 break
             case "unassign":
-                var body UnassignRolesToClientsRequest
+                var body request.UnassignRolesToClients
                 err := json.NewDecoder(r.Body).Decode(&body)
                 if err != nil {
                     logger.Debug(fmt.Sprintf("Invalid POST /client: %v", err))
@@ -249,7 +177,7 @@ func RunManagementService(ctx context.Context) {
             }
             break
         case http.MethodDelete:
-            var body DeleteClientsRequest
+            var body request.DeleteClients
             err := json.NewDecoder(r.Body).Decode(&body)
             if err != nil {
                 logger.Debug(fmt.Sprintf("Invalid DELETE /client: %v", err))
@@ -293,7 +221,7 @@ func RunManagementService(ctx context.Context) {
             }
             break
         case http.MethodPost:
-            var body UpdateRoleNameRequest
+            var body request.UpdateRoleName
             err := json.NewDecoder(r.Body).Decode(&body)
             if err != nil {
                 logger.Debug(fmt.Sprintf("Invalid POST /role/%v: %v", id, err))
@@ -339,7 +267,7 @@ func RunManagementService(ctx context.Context) {
             requestType := params.Get("type")
             switch requestType {
             case "upsert":
-                var body UpsertRolesRequest
+                var body request.UpsertRoles
                 err := json.NewDecoder(r.Body).Decode(&body)
                 if err != nil {
                     logger.Debug(fmt.Sprintf("Invalid POST /role: %v", err))
@@ -355,7 +283,7 @@ func RunManagementService(ctx context.Context) {
                 }
                 break
             case "client":
-                var body FetchClientRolesRequest
+                var body request.FetchClientRoles
                 err := json.NewDecoder(r.Body).Decode(&body)
                 if err != nil {
                     logger.Debug(fmt.Sprintf("Invalid POST /role: %v", err))
@@ -377,7 +305,7 @@ func RunManagementService(ctx context.Context) {
                 }
                 break
             case "assign":
-                var body AssignResourcesToRolesRequest
+                var body request.AssignResourcesToRoles
                 err := json.NewDecoder(r.Body).Decode(&body)
                 if err != nil {
                     logger.Debug(fmt.Sprintf("Invalid POST /role: %v", err))
@@ -393,7 +321,7 @@ func RunManagementService(ctx context.Context) {
                 }
                 break
             case "unassign":
-                var body UnassignResourcesToRolesRequest
+                var body request.UnassignResourcesToRoles
                 err := json.NewDecoder(r.Body).Decode(&body)
                 if err != nil {
                     logger.Debug(fmt.Sprintf("Invalid POST /role: %v", err))
@@ -413,7 +341,7 @@ func RunManagementService(ctx context.Context) {
             }
             break
         case http.MethodDelete:
-            var body DeleteRolesRequest
+            var body request.DeleteRoles
             err := json.NewDecoder(r.Body).Decode(&body)
             if err != nil {
                 logger.Debug(fmt.Sprintf("Invalid DELETE /role: %v", err))
@@ -457,7 +385,7 @@ func RunManagementService(ctx context.Context) {
             }
             break
         case http.MethodPost:
-            var body UpdateResourceNameRequest
+            var body request.UpdateResourceName
             err := json.NewDecoder(r.Body).Decode(&body)
             if err != nil {
                 logger.Debug(fmt.Sprintf("Invalid POST /client/%v: %v", id, err))
@@ -503,7 +431,7 @@ func RunManagementService(ctx context.Context) {
             requestType := params.Get("type")
             switch requestType {
             case "upsert":
-                var body UpsertResourcesRequest
+                var body request.UpsertResources
                 err := json.NewDecoder(r.Body).Decode(&body)
                 if err != nil {
                     logger.Debug(fmt.Sprintf("Invalid POST /resource: %v", err))
@@ -519,7 +447,7 @@ func RunManagementService(ctx context.Context) {
                 }
                 break
             case "client":
-                var body FetchClientResourcesRequest
+                var body request.FetchClientResources
                 err := json.NewDecoder(r.Body).Decode(&body)
                 if err != nil {
                     logger.Debug(fmt.Sprintf("Invalid POST /resource: %v", err))
@@ -545,7 +473,7 @@ func RunManagementService(ctx context.Context) {
             }
             break
         case http.MethodDelete:
-            var body DeleteResourcesRequest
+            var body request.DeleteResources
             err := json.NewDecoder(r.Body).Decode(&body)
             if err != nil {
                 logger.Debug(fmt.Sprintf("Invalid DELETE /resource: %v", err))
@@ -583,7 +511,7 @@ func RunManagementService(ctx context.Context) {
             }
             break
         case http.MethodPut:
-            var body ResetDHCPRequest
+            var body request.ResetDHCP
             err := json.NewDecoder(r.Body).Decode(&body)
             if err != nil {
                 logger.Debug(fmt.Sprintf("Invalid POST /dhcp: %v", err))
