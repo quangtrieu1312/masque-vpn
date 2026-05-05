@@ -15,7 +15,6 @@ jobs:
   # ──────────────────────────────────────────────
   build:
     name: Build Alpine binary
-    runs-on: ubuntu-latest
     container:
       image: golang:tip-alpine3.23
     strategy:
@@ -23,15 +22,18 @@ jobs:
         include:
           - goarch: amd64
             alpine_arch: x86_64
+            runner: ubuntu-latest
           - goarch: arm64
             alpine_arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     outputs:
       pkgver: ${{ steps.meta.outputs.pkgver }}
       pkgrel: ${{ steps.meta.outputs.pkgrel }}
 
     steps:
       - name: Install C toolchain
-        run: apk update && apk add --no-cache git
+        run: apk update && apk add --no-cache git gcc musl-dev build-base
 
       - uses: actions/checkout@v4
 
@@ -52,7 +54,7 @@ jobs:
 
       - name: Build production binary
         env:
-          CGO_ENABLED: "0"
+          CGO_ENABLED: "1"
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
         run: |
@@ -77,15 +79,17 @@ jobs:
   package:
     name: Package & publish APK
     needs: build
-    runs-on: ubuntu-latest
     environment: TESTING
     strategy:
       matrix:
         include:
           - goarch: amd64
             alpine_arch: x86_64
+            runner: ubuntu-latest
           - goarch: arm64
             alpine_arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     container:
       image: alpine:3.23
     permissions:
