@@ -9,7 +9,7 @@ arch="x86_64 aarch64"
 license="MIT"
 depends=""
 makedepends=""
-options="!check"  # pre-built binary requires NET_ADMIN at runtime
+options="!check !strip"  # pre-built binary requires NET_ADMIN at runtime
 subpackages="$pkgname-openrc"
 source="
 	masque
