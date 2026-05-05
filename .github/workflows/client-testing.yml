@@ -30,8 +30,8 @@ jobs:
       pkgrel: ${{ steps.meta.outputs.pkgrel }}
 
     steps:
-      - name: Install C toolchain (for CGO / musl dynamic linking)
-        run: apk update && apk add --no-cache git gcc musl-dev build-base
+      - name: Install C toolchain
+        run: apk update && apk add --no-cache git
 
       - uses: actions/checkout@v4
 
@@ -52,7 +52,7 @@ jobs:
 
       - name: Build production binary
         env:
-          CGO_ENABLED: "1"
+          CGO_ENABLED: "0"
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
         run: |
