@@ -155,7 +155,7 @@ func DeleteClients(clientIDs []int64) (bool, error) {
         return false, err
     }
 	defer tx.Rollback()
-    stmt, err := tx.Prepare("DELETE FROM client WHERE id = ?")
+    stmt, err := tx.Prepare("DELETE FROM clients WHERE id = ?")
     if err != nil {
 	    return false, err
     }
@@ -163,7 +163,7 @@ func DeleteClients(clientIDs []int64) (bool, error) {
 
     for i := 0; i < len(clientIDs); i++ {
         client := domain.Client{}
-        err = tx.QueryRow("SELECT id, name, ip, last_seen FROM client WHERE id = ?", clientIDs[i]).Scan(&client.ID, &client.Name, &client.IP, &client.LastSeen)
+        err = tx.QueryRow("SELECT id, name, ip, last_seen FROM clients WHERE id = ?", clientIDs[i]).Scan(&client.ID, &client.Name, &client.IP, &client.LastSeen)
         if err != nil {
 	        return false, err
         }

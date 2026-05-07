@@ -39,7 +39,7 @@ func GetAllResources() (*[]domain.Resource, error) {
     if err != nil {
         return nil, err
     }
-    return &resources, err
+    return &resources, nil
 }
 
 func GetResourceByID(resourceID int64) (*domain.Resource, error) {
@@ -49,7 +49,7 @@ func GetResourceByID(resourceID int64) (*domain.Resource, error) {
     }
 	defer tx.Rollback()
     resource := domain.Resource{}
-    err = tx.QueryRow("SELECT id, name, value FROM roles WHERE id = ?", resourceID).Scan(&resource.ID, &resource.Name, resource.Value)
+    err = tx.QueryRow("SELECT id, name, value FROM resources WHERE id = ?", resourceID).Scan(&resource.ID, &resource.Name, &resource.Value)
     if err != nil {
         return nil, err
     }
