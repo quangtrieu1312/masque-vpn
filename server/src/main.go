@@ -38,11 +38,10 @@ import (
     "github.com/quangtrieu1312/masque-vpn/server/service"
 )
 
-
-var serverSocketSend int
 var tunTapDevice *water.Interface
 var mu *sync.RWMutex
 var ipToTunChan map[string](chan []byte)
+var wanAddr netip.Addr
 
 func main() {
     ctx := context.WithoutCancel(context.Background())
@@ -99,14 +98,13 @@ func main() {
 	if len(addrs) == 0 {
 		logger.Fatal(fmt.Sprintf("no IP addresses found for %s", ifaceName))
 	}
-	var ethAddr netip.Addr
 	for _, addr := range addrs {
 		a, ok := netip.AddrFromSlice(addr.IP)
 		if !ok {
 			logger.Fatal(fmt.Sprintf("failed to parse %s address", ifaceName))
 		}
 		if !a.IsLinkLocalUnicast() {
-			ethAddr = a
+			wanAddr = a
 			break
 		}
 	}
@@ -117,12 +115,6 @@ func main() {
 		logger.Fatal(fmt.Sprintf("failed to create tun/tap device: %v", err))
 	}
     tunTapDevice = dev
-
-	fdSnd, err := createSendSocket(ethAddr)
-	if err != nil {
-		logger.Fatal(fmt.Sprintf("failed to create send socket: %v", err))
-	}
-	serverSocketSend = fdSnd
 
 	upChan := make(chan bool)
     go func(ctxt context.Context) {
@@ -360,7 +352,13 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
                 tunChan, ok := ipToTunChan[destIP.String()]
                 mu.RUnlock()
 				if ok {
-                	tunChan <- b[:n]
+                	pkt := make([]byte, n)
+    				copy(pkt, b[:n])
+    				select {
+    					case tunChan <- pkt:
+    					default:
+        					logger.Trace(fmt.Sprintf("Client %s channel full, dropping packet.", destIP.String()))
+    				}
 				} else {
                     logger.Trace(fmt.Sprintf("Cannot find connection for client IP = %s. Dropping packet.", destIP.String()))
                 }
@@ -393,8 +391,12 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+		fdSnd, err := createSendSocket(wanAddr)
+		if err != nil {
+			logger.Fatal(fmt.Sprintf("failed to create send socket: %v", err))
+		}
 
-		if err := handleConn(&conCtx, make(chan []byte), conn, ipProtocol); err != nil {
+		if err := handleConn(&conCtx, make(chan []byte, 256), conn, ipProtocol, fdSnd); err != nil {
 			logger.Error(fmt.Sprintf("failed to handle connection: %v", err))
 			return
 		}
@@ -412,7 +414,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 	return nil
 }
 
-func handleConn(ctx *context.Context, tunChan chan []byte,  conn *connectip.Conn, ipProtocol uint8) error {
+func handleConn(ctx *context.Context, tunChan chan []byte,  conn *connectip.Conn, ipProtocol uint8, fd int) error {
 	setupCtx, setupCancel := context.WithTimeout(*ctx, 5*time.Second)
 	defer setupCancel()
     logger.Debug("Start connectip flow")
@@ -461,11 +463,11 @@ func handleConn(ctx *context.Context, tunChan chan []byte,  conn *connectip.Conn
 			b := make([]byte, 1500)
 			n, err := conn.ReadPacket(b)
 			if err != nil {
-				errChan <- fmt.Errorf("failed to read from connection: %w", err)
+				errChan <- fmt.Errorf("failed to read from MASQUE connection: %w", err)
 				return
 			}
             logger.Trace(fmt.Sprintf("TUN -> WAN: read %d bytes, response payload = %x", n, b[:n]))
-			if err := utility.SendOnSocket(serverSocketSend, b[:n]); err != nil {
+			if err := utility.SendOnSocket(fd, b[:n]); err != nil {
 				errChan <- fmt.Errorf("writing to server socket: %w", err)
 				return
 			}
@@ -478,13 +480,18 @@ func handleConn(ctx *context.Context, tunChan chan []byte,  conn *connectip.Conn
             logger.Trace(fmt.Sprintf("WAN -> TUN: read %d bytes, response payload = %x", len(data), data))
 			icmp, err := conn.WritePacket(data)
 			if err != nil {
-				errChan <- fmt.Errorf("failed to write to connection: %w", err)
-				return
+				if errors.Is(err, net.ErrClosed) {
+        			errChan <- err  // fatal, connection is gone
+        			return
+    			}
+				// maybe the packet queue is just full
+				// as a VPN server we drop packet
+				// and transportation layer (L4) can retry
+				errChan <- fmt.Errorf("failed to write to MASQUE connection, drop packet: %w", err)
 			}
 			if len(icmp) > 0 {
-				if err := utility.SendOnSocket(serverSocketSend, icmp); err != nil {
+				if err := utility.SendOnSocket(fd, icmp); err != nil {
 					logger.Error(fmt.Sprintf("failed to send ICMP packet: %v", err))
-                    return
 				}
 			}
 		}
@@ -497,5 +504,6 @@ func handleConn(ctx *context.Context, tunChan chan []byte,  conn *connectip.Conn
 	mu.Unlock()
 	conn.Close()
 	<-errChan // wait for the other goroutine to finish
+	unix.Close(fd)
 	return err
 }

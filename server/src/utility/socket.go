@@ -16,7 +16,7 @@ func SendOnSocket(fd int, b []byte) error {
 			return errors.New("IPv4 packet too short")
 		}
 		dest := ([4]byte)(b[16:20])
-		if err := unix.Sendto(fd, b, 0, &unix.SockaddrInet4{Addr: dest}); err != nil {
+		if err := unix.Sendto(fd, b, unix.MSG_DONTWAIT, &unix.SockaddrInet4{Addr: dest}); err != nil {
 			return fmt.Errorf("sendto for IPv4 packet: %w", err)
 		}
 		return nil
