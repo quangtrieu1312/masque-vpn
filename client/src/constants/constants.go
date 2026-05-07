@@ -12,3 +12,5 @@ const CONF_PATH = WORK_DIR + "/masque.conf"
 const SERVER_CA_PATH = CERT_DIR + "/ca.crt"
 const CLIENT_CERT_PATH = CERT_DIR + "/client.crt"
 const CLIENT_KEY_PATH = CERT_DIR + "/client.key"
+
+const LOG_PATH = "/var/log/masque.log"

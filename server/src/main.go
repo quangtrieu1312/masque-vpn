@@ -411,17 +411,17 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 	return nil
 }
 
-func handleConn(contxt *context.Context, tunChan chan []byte,  conn *connectip.Conn, ipProtocol uint8) error {
-	ctx, cancel := context.WithTimeout(*contxt, 5*time.Second)
-	defer cancel()
+func handleConn(ctx *context.Context, tunChan chan []byte,  conn *connectip.Conn, ipProtocol uint8) error {
+	setupCtx, setupCancel := context.WithTimeout(*ctx, 5*time.Second)
+	defer setupCancel()
     logger.Debug("Start connectip flow")
     // Get the next unassigned address
     // And assign prefix = IP/32 to the client
     // Note:
     // We can assign any subnet size here but I'm using /32 for simplicity
     // I may want to go back to this hardcoded number when I see issues for site-to-side VPN
-    clientId := ctx.Value("clientId").(int64)
-    peerAddr, perr := service.AssignIPToClient(ctx, clientId)
+    clientId := (*ctx).Value("clientId").(int64)
+    peerAddr, perr := service.AssignIPToClient(setupCtx, clientId)
     if perr != nil {
         return fmt.Errorf("Failed to get available IP: %w", perr)
     }
@@ -431,13 +431,13 @@ func handleConn(contxt *context.Context, tunChan chan []byte,  conn *connectip.C
     }
     bitmask := 32
     ipPrefix := netip.PrefixFrom(addr, bitmask)
-	if err := conn.AssignAddresses(ctx, []netip.Prefix{ipPrefix}); err != nil {
+	if err := conn.AssignAddresses(setupCtx, []netip.Prefix{ipPrefix}); err != nil {
 		return fmt.Errorf("failed to assign addresses: %w", err)
 	}
     mu.Lock()
     ipToTunChan[peerAddr] = tunChan
     mu.Unlock()
-    clientResources, cerr := service.GetClientResources(ctx, clientId)
+    clientResources, cerr := service.GetClientResources(setupCtx, clientId)
     if cerr != nil {
         return cerr
     }
@@ -450,7 +450,7 @@ func handleConn(contxt *context.Context, tunChan chan []byte,  conn *connectip.C
         connectipRoute := connectip.IPRoute{StartIP: r.Addr(), EndIP: utility.LastIPAddr(r), IPProtocol: ipProtocol}
         clientRoutes = append(clientRoutes, connectipRoute)
     }
-	if err := conn.AdvertiseRoute(ctx, clientRoutes); err != nil {
+	if err := conn.AdvertiseRoute(setupCtx, clientRoutes); err != nil {
 		return fmt.Errorf("failed to advertise route: %w", err)
 	}
 

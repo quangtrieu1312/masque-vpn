@@ -11,11 +11,12 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
-	"strconv"
-	"time"
-    "strings"
 	"os/exec"
-    //"sync"
+	"strconv"
+	"strings"
+	"time"
+
+	//"sync"
 
 	connectip "github.com/quic-go/connect-ip-go"
 	//"golang.org/x/sys/unix"
@@ -26,9 +27,10 @@ import (
 	"github.com/vishvananda/netlink"
 	"github.com/yosida95/uritemplate/v3"
 
-    "github.com/quangtrieu1312/masque-vpn/client/utility"
-    "github.com/quangtrieu1312/masque-vpn/client/config"
-    "github.com/quangtrieu1312/masque-vpn/client/logger"
+	"github.com/quangtrieu1312/masque-vpn/client/config"
+	"github.com/quangtrieu1312/masque-vpn/client/constants"
+	"github.com/quangtrieu1312/masque-vpn/client/logger"
+	"github.com/quangtrieu1312/masque-vpn/client/utility"
 )
 
 func PreUp(ctx *context.Context) {
@@ -60,7 +62,7 @@ func main() {
     defer cancel()
     config.Load(&ctx)
     logLevel := ctx.Value("LOG_LEVEL").(string)
-    logPath := ctx.Value("LOG_PATH").(string)
+    logPath := constants.LOG_PATH
     logger.UpdateLogLevelName(logLevel)
     logger.UpdateLogPath(logPath)
     f, err := os.OpenFile(logger.GetLogPath(), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
@@ -169,7 +171,7 @@ func healthCheck(ctx context.Context) error {
 }
 
 func establishMASQUEConn(ctx context.Context, serverAddr netip.AddrPort, serverFQDN string, enableKeyLog bool, keyLogPath string) ([]connectip.IPRoute, []netip.Prefix, *connectip.Conn, error) {
-	ctx, cancel := context.WithTimeout(ctx,2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx,15*time.Second)
 	defer cancel()
     udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
 	if err != nil {
@@ -177,9 +179,9 @@ func establishMASQUEConn(ctx context.Context, serverAddr netip.AddrPort, serverF
 	}
 
     // load tls configuration
-    CertFilePath := ctx.Value("CLIENT_CERT_PATH").(string)
-    KeyFilePath := ctx.Value("CLIENT_KEY_PATH").(string)
-    CACertFilePath := ctx.Value("SERVER_CA_PATH").(string)
+    CertFilePath := constants.CLIENT_CERT_PATH
+    KeyFilePath := constants.CLIENT_KEY_PATH
+    CACertFilePath := constants.SERVER_CA_PATH
 	cert, err := tls.LoadX509KeyPair(CertFilePath, KeyFilePath)
 	if err != nil {
         panic(fmt.Sprintf("Cannot load client key pair: %v",err))
