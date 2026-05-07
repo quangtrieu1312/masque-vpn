@@ -15,11 +15,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	//"sync"
+	"golang.org/x/sys/unix"
+	"syscall"
 
 	connectip "github.com/quic-go/connect-ip-go"
-	//"golang.org/x/sys/unix"
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -35,7 +34,7 @@ import (
 
 func PreUp(ctx *context.Context) {
     logger.LogInfo("Exec pre up")
-    cmd := exec.Command("/sbin/ip", "rule", "add", "not", "to", (*ctx).Value("SERVER_IP").(string), "table", "54321")
+    cmd := exec.Command("/sbin/ip", "rule", "add", "not", "fwmark", (*ctx).Value("FWMARK").(string), "table", "9000")
     logger.LogInfo(fmt.Sprintf("Running command: /sbin/ip"))
     _, err := cmd.Output()
     if err != nil {
@@ -49,7 +48,7 @@ func PostUp() {
 
 func PostDown() {
     logger.LogInfo("Exec post down")
-    cmd := exec.Command("/sbin/ip", "rule", "del", "table", "54321")
+    cmd := exec.Command("/sbin/ip", "rule", "del", "table", "masque")
     logger.LogInfo(fmt.Sprintf("Running command: /sbin/ip"))
     _, err := cmd.Output()
     if err != nil {
@@ -173,9 +172,29 @@ func healthCheck(ctx context.Context) error {
 func establishMASQUEConn(ctx context.Context, serverAddr netip.AddrPort, serverFQDN string, enableKeyLog bool, keyLogPath string) ([]connectip.IPRoute, []netip.Prefix, *connectip.Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx,15*time.Second)
 	defer cancel()
-    udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
+    fwmark, err := strconv.ParseInt(ctx.Value("FWMARK").(string), 10, 32)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to parse FWMARK config to number: %w", err)
+	}
+	lc := net.ListenConfig{
+    	Control: func(network, addr string, c syscall.RawConn) error {
+        	var soErr error
+        	err := c.Control(func(fd uintptr) {
+            	soErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_MARK, int(fwmark))
+        	})
+        	if err != nil {
+            	return err
+        	}
+        	return soErr
+    	},
+	}
+	pc, err := lc.ListenPacket(context.Background(), "udp", "0.0.0.0:0")
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to listen on UDP: %w", err)
+	}
+	udpConn, ok := pc.(*net.UDPConn)
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("expected *net.UDPConn, got %T", pc)
 	}
 
     // load tls configuration

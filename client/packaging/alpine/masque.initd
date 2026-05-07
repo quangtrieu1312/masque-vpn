@@ -27,15 +27,15 @@ start_pre() {
 	checkpath -f -m 0750 -o root:root /var/log/masque.log
 	# Ensure cert files referenced in masque.conf are present
 	if [ ! -f /etc/masque/certs/client.crt ]; then
-		eerror "Client certificate not found: /etc/masque/certs/client.crt"
+		eerror "Client certificate not found: /etc/tmasque/certs/client.crt"
 		return 1
 	fi
 	if [ ! -f /etc/masque/certs/client.key ]; then
-		eerror "Client key not found: /etc/masque/certs/client.key"
+		eerror "Client key not found: /etc/tmasque/certs/client.key"
 		return 1
 	fi
 	if [ ! -f /etc/masque/certs/ca.crt ]; then
-		eerror "Server CA cert not found: /etc/masque/certs/ca.crt"
+		eerror "Server CA cert not found: /etc/tmasque/certs/ca.crt"
 		return 1
 	fi
 }
@@ -43,6 +43,6 @@ start_pre() {
 stop_post() {
 	# The binary runs PostDown (ip rule del table 54321) on clean exit.
 	# If it was killed uncleanly, clean up the routing rule manually.
-	/sbin/ip rule del table 54321 2>/dev/null || true
+	/sbin/ip rule del table masque 2>/dev/null || true
 }
 
