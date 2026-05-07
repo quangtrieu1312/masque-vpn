@@ -158,6 +158,9 @@ func UpsertRoles(roleNames []string) (*[]int64, error) {
 	roleIDs := []int64{}
     for _, role := range(roleNames) {
 		result, err := stmt.Exec(role)
+        if err != nil {
+	        return nil, err
+        }
         id, err := result.LastInsertId()
         if err != nil {
 	        return nil, err
