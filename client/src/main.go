@@ -48,7 +48,7 @@ func PostUp() {
 
 func PostDown() {
     logger.LogInfo("Exec post down")
-    cmd := exec.Command("/sbin/ip", "rule", "del", "table", "masque")
+    cmd := exec.Command("/sbin/ip", "route", "del", "table", "9000")
     logger.LogInfo(fmt.Sprintf("Running command: /sbin/ip"))
     _, err := cmd.Output()
     if err != nil {
@@ -164,6 +164,7 @@ func main() {
 }
 
 func healthCheck(ctx context.Context) error {
+	//TODO
     ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
     defer cancel()
     return nil
