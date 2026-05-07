@@ -15,6 +15,7 @@ func GetAllRoles() (*[]domain.Role, error) {
     if err != nil {
         return nil, err
     }
+	defer tx.Rollback()
     roles := []domain.Role{}
     rows, err := tx.Query("SELECT id, name FROM roles")
     if err != nil {
@@ -45,6 +46,7 @@ func GetRoleByID(roleID int64) (*domain.Role, error) {
     if err != nil {
         return nil, err
     }
+	defer tx.Rollback()
     role := domain.Role{}
     err = tx.QueryRow("SELECT id, name FROM roles WHERE id = ?", roleID).Scan(&role.ID, &role.Name)
     if err != nil {
@@ -62,6 +64,7 @@ func AssignResourcesToRoles(resourceIDs []int64, roleIDs []int64) (bool, error) 
     if err != nil {
         return false, err
     }
+	defer tx.Rollback()
     stmt, err := tx.Prepare(`
         INSERT INTO roles_resources(role_id, resource_id)
         VALUES (?, ?)
@@ -92,6 +95,7 @@ func UnassignResourcesToRoles(resourceIDs []int64, roleIDs []int64) (bool, error
     if err != nil {
         return false, err
     }
+	defer tx.Rollback()
     stmt, err := tx.Prepare(fmt.Sprintf(`
         DELETE FROM roles_resources
         WHERE role_id IN (%v) and resource_id IN (%v)
@@ -116,6 +120,7 @@ func UpdateRoleName(roleID int64, newName string) (bool, error) {
     if err != nil {
         return false, err
     }
+	defer tx.Rollback()
     stmt, err := tx.Prepare(`UPDATE roles SET name = ? WHERE id = ?`)
     if err != nil {
 	    return false, err
@@ -139,6 +144,7 @@ func UpsertRoles(roleNames []string) (*[]int64, error) {
     if err != nil {
         return nil, err
     }
+	defer tx.Rollback()
     stmt, err := tx.Prepare(`
         INSERT INTO roles(name)
         VALUES(?)
@@ -170,6 +176,7 @@ func DeleteRoles(roleIDs []int64) (bool, error) {
     if err != nil {
         return false, err
     }
+	defer tx.Rollback()
     stmt, err := tx.Prepare(fmt.Sprintf(`DELETE FROM roles WHERE id IN (%v)`, utility.Int64ArrayInCSVFormat(roleIDs)))
     if err != nil {
 	    return false, err
@@ -193,6 +200,7 @@ func GetClientRoles(clientID int64) (*[]domain.Role, error) {
     if err != nil {
         return nil, err
     }
+	defer tx.Rollback()
     roles := []domain.Role{}
 
     rows, err := tx.Query(`

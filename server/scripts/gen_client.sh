@@ -34,7 +34,7 @@ if [[ -z "$clientName" ]]; then
     exit 1
 fi
 
-id=$(curl --unix-socket $MANAGEMENT_SOCKET_PATH \
+id=$(set -o pipefail; curl --fail --unix-socket $MANAGEMENT_SOCKET_PATH \
     -X POST \
     http://masqued/client?type=upsert \
     --data \
@@ -43,6 +43,8 @@ id=$(curl --unix-socket $MANAGEMENT_SOCKET_PATH \
     "names": ["'"${clientName}"'"]
 }
 ' | jq .ids[0])
+
+[ $? -ne 0 ] && log "error" "Cannot upsert client $clientName" && exit 1
 
 genClientCert "$id" "$clientName"
 

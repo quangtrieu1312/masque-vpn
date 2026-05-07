@@ -15,6 +15,7 @@ func GetAllClients() (*[]domain.Client, error) {
     if err != nil {
         return nil, err
     }
+	defer tx.Rollback()
     clients := []domain.Client{}
     rows, err := tx.Query("SELECT id, name, ip, last_seen FROM clients")
     if err != nil {
@@ -45,6 +46,7 @@ func GetClientByID(clientID int64) (*domain.Client, error) {
     if err != nil {
         return nil, err
     }
+	defer tx.Rollback()
     client := domain.Client{}
     err = tx.QueryRow("SELECT id, name, ip, last_seen FROM clients WHERE id = ?", clientID).Scan(&client.ID, &client.Name, &client.IP, &client.LastSeen)
     if err != nil {
@@ -62,6 +64,7 @@ func UpsertClients(clientNames []string) (*[]int64, error) {
     if err != nil {
         return nil, err
     }
+	defer tx.Rollback()
     stmt, err := tx.Prepare(`
         INSERT INTO clients(name, ip)
         VALUES(?, ?)
@@ -116,6 +119,7 @@ func AssignIPToClient(clientID int64) (string, error) {
     if err != nil {
         return "", err
     }
+	defer tx.Rollback()
     var ip string
     err = tx.QueryRow("SELECT ip FROM clients WHERE id = ?", clientID).Scan(&ip)
     if err != nil {
@@ -125,7 +129,7 @@ func AssignIPToClient(clientID int64) (string, error) {
         return ip, nil
     }
     dhcp := domain.DHCP{}
-    err = tx.QueryRow("SELECT ip, first_ip, last_ip FROM dhcp ORDER BY first_ip ASC").Scan(&dhcp.ID, &dhcp.FirstIP, &dhcp.LastIP)
+    err = tx.QueryRow("SELECT id, first_ip, last_ip FROM dhcp ORDER BY first_ip ASC").Scan(&dhcp.ID, &dhcp.FirstIP, &dhcp.LastIP)
     if err != nil {
 	    return "", err
     }
@@ -150,6 +154,7 @@ func DeleteClients(clientIDs []int64) (bool, error) {
     if err != nil {
         return false, err
     }
+	defer tx.Rollback()
     stmt, err := tx.Prepare("DELETE FROM client WHERE id = ?")
     if err != nil {
 	    return false, err
@@ -176,7 +181,7 @@ func DeleteClients(clientIDs []int64) (bool, error) {
         // Return IP to DHCP pool
         if err1 == sql.ErrNoRows && err2 == sql.ErrNoRows {
             // There is nothing to merge
-            _, err = tx.Exec("INSERT INTO dhcp(first_ip, last_ip) VALUES(?, ?)", ipInt)
+            _, err = tx.Exec("INSERT INTO dhcp(first_ip, last_ip) VALUES(?, ?)", ipInt, ipInt)
             if err != nil {
 	            return false, err
             }
@@ -226,6 +231,7 @@ func UnassignRolesToClients(roleIDs []int64, clientIDs []int64) (bool, error) {
     if err != nil {
         return false, err
     }
+	defer tx.Rollback()
     stmt, err := tx.Prepare(fmt.Sprintf(`
         DELETE FROM clients_roles
         WHERE client_id IN (%v) and role_id IN (%v)
@@ -235,6 +241,9 @@ func UnassignRolesToClients(roleIDs []int64, clientIDs []int64) (bool, error) {
     }
     defer stmt.Close()
     _, err = stmt.Exec()
+    if err != nil {
+        return false, err
+    }
     err = tx.Commit()
     if err != nil {
         return false, err
@@ -247,6 +256,7 @@ func AssignRolesToClients(roleIDs []int64, clientIDs []int64) (bool, error) {
     if err != nil {
         return false, err
     }
+	defer tx.Rollback()
     stmt, err := tx.Prepare(`
         INSERT INTO clients_roles(client_id, role_id)
         VALUES (?, ?)
@@ -277,6 +287,7 @@ func UpdateClientName(clientID int64, newName string) (bool, error) {
     if err != nil {
         return false, err
     }
+	defer tx.Rollback()
     stmt, err := tx.Prepare(`UPDATE clients SET name = ? WHERE id = ?`)
     if err != nil {
 	    return false, err

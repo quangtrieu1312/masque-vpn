@@ -294,11 +294,10 @@ func establishTunTapAndRoutes(ctx context.Context, routes []connectip.IPRoute, l
 		return nil, fmt.Errorf("failed to bring up TUN interface: %w", err)
 	}
 
-    PreUp(&ctx)
 	for _, route := range routes {
 		logger.LogDebug(fmt.Sprintf("adding routes for %s - %s (protocol: %d)", route.StartIP, route.EndIP, route.IPProtocol))
 		for _, prefix := range route.Prefixes() {
-            cmd := exec.Command("/sbin/ip", "route", "add", prefix.String() , "dev", dev.Name(), "table", "54321")
+            cmd := exec.Command("/sbin/ip", "route", "add", prefix.String() , "dev", dev.Name(), "table", "9000")
             logger.LogInfo(fmt.Sprintf("Adding route: %v", prefix.String()))
             _, err := cmd.Output()
             if err != nil {
@@ -306,6 +305,7 @@ func establishTunTapAndRoutes(ctx context.Context, routes []connectip.IPRoute, l
             }
 		}
 	}
+    PreUp(&ctx)
     return dev, nil
 }
 

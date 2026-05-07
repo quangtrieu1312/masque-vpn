@@ -16,6 +16,7 @@ func GetAllResources() (*[]domain.Resource, error) {
     if err != nil {
         return nil, err
     }
+	defer tx.Rollback()
     resources := []domain.Resource{}
     rows, err := tx.Query("SELECT id, name, value FROM resources")
     if err != nil {
@@ -46,6 +47,7 @@ func GetResourceByID(resourceID int64) (*domain.Resource, error) {
     if err != nil {
         return nil, err
     }
+	defer tx.Rollback()
     resource := domain.Resource{}
     err = tx.QueryRow("SELECT id, name, value FROM roles WHERE id = ?", resourceID).Scan(&resource.ID, &resource.Name, resource.Value)
     if err != nil {
@@ -63,6 +65,7 @@ func GetClientResources(clientID int64) (*[]domain.Resource, error) {
     if err != nil {
         return nil, err
     }
+	defer tx.Rollback()
     resources := []domain.Resource{}
 
     rows, err := tx.Query(`
@@ -102,6 +105,7 @@ func UpsertResources(resources []request.Resource) (*[]int64, error) {
     if err != nil {
         return nil, err
     }
+	defer tx.Rollback()
     stmt, err := tx.Prepare(`
         INSERT INTO resources(name, value)
         VALUES(?, ?)
@@ -138,6 +142,7 @@ func UpdateResourceName(resourceID int64, newName string) (bool, error) {
     if err != nil {
         return false, err
     }
+	defer tx.Rollback()
     stmt, err := tx.Prepare(`UPDATE resources SET name = ? WHERE id = ?`)
     if err != nil {
 	    return false, err
@@ -161,6 +166,7 @@ func DeleteResources(resourceIDs []int64) (bool, error) {
     if err != nil {
         return false, err
     }
+	defer tx.Rollback()
     stmt, err := tx.Prepare(fmt.Sprintf(`DELETE FROM resources WHERE id IN (%v)`, utility.Int64ArrayInCSVFormat(resourceIDs)))
     if err != nil {
 	    return false, err

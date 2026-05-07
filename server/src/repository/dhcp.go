@@ -14,6 +14,7 @@ func GetAllAvailableIPRanges() (*[]domain.DHCP, error) {
     if err != nil {
         return nil, err
     }
+	defer tx.Rollback()
     ipRanges := []domain.DHCP{}
     rows, err := tx.Query("SELECT id, first_ip, last_ip FROM dhcp")
     if err != nil {
@@ -44,7 +45,8 @@ func ResetDHCP(firstIP int64, lastIP int64) (bool, error) {
     if err != nil {
         return false, err
     }
-    _, err = tx.Exec("DELETE * FROM dhcp")
+	defer tx.Rollback()
+    _, err = tx.Exec("DELETE FROM dhcp")
     if err != nil {
         return false, err
     }
