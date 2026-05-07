@@ -31,10 +31,9 @@ masque-vpn/
 ├── client/
 │   ├── src/                    # Go source (main.go, logger.go, ip.go, rand.go)
 │   ├── masque.conf.template    # Client config template
-│   ├── Dockerfile              # Runtime image
-│   ├── Dockerfile.build        # Build-only image (golang:tip-alpine3.22)
-│   ├── docker-compose.yml      # Example multi-client compose file
-│   └── build.sh                # Local Docker-based build script
+│   ├── Vagrantfile             # Vagrant VM for bare-metal testing
+│   ├── packaging/alpine/       # Alpine APK packaging files
+│   └── build.sh                # Local build script (outputs to client/build/masque)
 │
 └── server/
     ├── src/                    # Go source
@@ -50,7 +49,7 @@ masque-vpn/
     │   ├── service/            # Business logic
     │   └── utility/            # IP math, raw socket helpers
     ├── scripts/
-    │   ├── run.sh              # Container entrypoint (bootstrap + start)
+    │   ├── run.sh              # Container entrypoint (cert bootstrap + start masqued)
     │   ├── gen_client.sh       # Create a named client + generate its cert
     │   ├── gen_client_cert.sh  # Generate Ed25519 cert for a client
     │   ├── gen_client_CA.sh    # Bootstrap the client CA
@@ -87,7 +86,7 @@ cp server/masqued.conf.template server/masqued.conf
 ```
 
 | Key | Required | Description | Example |
-|-----|----------|-------------|---------|
+|-----|----------|-------------|---------| 
 | `LOG_LEVEL` | yes | Verbosity: `fatal`, `error`, `warn`, `info`, `debug`, `trace` | `info` |
 | `LOG_PATH` | yes | Log file path | `/etc/masqued/log` |
 | `WAN_INTERFACE` | yes | Host's WAN interface name | `eth0` |
@@ -112,9 +111,12 @@ sudo docker compose up --build -d
 On first boot, `run.sh` automatically:
 1. Generates the server CA and server TLS certificate (Ed25519)
 2. Generates the client CA
-3. Runs database migrations (SQLite, schema v1)
-4. Enables IP forwarding and disables reverse-path filtering
-5. Starts `masqued` (the MASQUE daemon) and the management Unix socket
+3. Starts `masqued` (the MASQUE daemon)
+
+`masqued` itself then handles on startup:
+1. Runs database migrations (SQLite, schema v1)
+2. Enables IP forwarding and disables reverse-path filtering (bootstrap scripts)
+3. Starts the QUIC listener and management Unix socket (post-up scripts + SNAT rules)
 
 ---
 
@@ -134,7 +136,7 @@ This registers `alice` in the database, generates an Ed25519 key pair signed by 
 server/certs/client/alice/bundle.zip
 ```
 
-The zip contains `client.crt`, `client.key`, and `ca.crt` (a symlink to the server CA).
+The zip contains `client.crt`, `client.key`, and `ca.crt` (a symlink to the server CA — used by the client to verify the server's TLS certificate).
 
 > **Note:** `genClient` also automatically creates a role named `alice` and assigns it to the client. Use the management API to assign resources to that role to grant the client access to CIDR prefixes.
 
@@ -159,15 +161,24 @@ cp /path/to/masque.conf.template /etc/masque/masque.conf
 Edit `/etc/masque/masque.conf`:
 
 | Key | Required | Description | Example |
-|-----|----------|-------------|---------|
+|-----|----------|-------------|---------| 
 | `LOG_LEVEL` | yes | Verbosity | `info` |
-| `LOG_PATH` | yes | Log file path | `/etc/masque/logs/masque.log` |
 | `ENABLE_KEY_LOG` | yes | Write TLS session keys (Wireshark) | `false` |
 | `KEY_LOG_PATH` | yes | Path for TLS key log file | `/tmp/masque_keylog.txt` |
 | `SERVER` | yes | Server address as `FQDN[:port]` (default port: 443) | `vpn.example.com:443` |
-| `SERVER_CA_PATH` | yes | Path to server CA cert | `/etc/masque/certs/ca.crt` |
-| `CLIENT_CERT_PATH` | yes | Path to client cert | `/etc/masque/certs/client.crt` |
-| `CLIENT_KEY_PATH` | yes | Path to client private key | `/etc/masque/certs/client.key` |
+| `FWMARK` | yes | Socket firewall mark used for routing rule (policy routing) | `9484` |
+
+The following paths are compiled into the client binary and are **not** configurable via the config file:
+
+| Path | Value |
+|------|-------|
+| Config file | `/etc/masque/masque.conf` |
+| Server CA cert | `/etc/masque/certs/ca.crt` |
+| Client cert | `/etc/masque/certs/client.crt` |
+| Client key | `/etc/masque/certs/client.key` |
+| Log file | `/var/log/masque.log` |
+
+Place the certs from `bundle.zip` at the above paths (which `unzip` into `/etc/masque/certs/` does automatically).
 
 ### 4. Run the client
 
@@ -177,14 +188,14 @@ Edit `/etc/masque/masque.conf`:
 sudo masque -f /etc/masque/masque.conf
 ```
 
-**Docker:**
+**Build from source:**
 
 ```sh
 cd client
-sudo docker compose up --build
+./build.sh
+# binary at client/build/masque
+sudo ./build/masque
 ```
-
-The `docker-compose.yml` shows an example of two simultaneous clients (`client1`, `client2`) each with their own cert volume mount.
 
 ---
 
@@ -235,7 +246,7 @@ Resources are CIDR prefixes that the server advertises as routes to any client h
 | Method | Path | Body | Description |
 |--------|------|------|-------------|
 | `GET` | `/dhcp` | | Get the current available IP ranges |
-| `PUT` | `/dhcp` | `{"fist_ip": <int>, "last_ip": <int>}` | Replace the IP pool (integer-encoded IPv4 addresses) |
+| `PUT` | `/dhcp` | `{"first_ip": <int>, "last_ip": <int>}` | Replace the IP pool (integer-encoded IPv4 addresses). |
 
 ### Examples
 
@@ -302,6 +313,11 @@ Client CA (Ed25519, 10yr)
 ```
 
 The server trusts the Client CA and requires client certificates (`RequireAndVerifyClientCert`). The client trusts the Server CA. There is no cross-signing — the two CAs are independent.
+
+The `bundle.zip` generated by `genClient` contains:
+- `client.crt` — client certificate signed by the Client CA
+- `client.key` — client Ed25519 private key
+- `ca.crt` — symlink to the **Server** CA certificate (so the client can verify the server's TLS cert)
 
 ## Security notes
 
