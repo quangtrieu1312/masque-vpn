@@ -48,9 +48,15 @@ func PostUp() {
 
 func PostDown() {
     logger.LogInfo("Exec post down")
-    cmd := exec.Command("/sbin/ip", "route", "del", "table", "9000")
+    cmd := exec.Command("/sbin/ip", "rule", "del", "table", "9000")
     logger.LogInfo(fmt.Sprintf("Running command: /sbin/ip"))
     _, err := cmd.Output()
+    if err != nil {
+        logger.LogFatal(fmt.Sprintf("Error running post down command: %v", err))
+    }
+    cmd = exec.Command("/sbin/ip", "route", "flush", "table", "9000")
+    logger.LogInfo(fmt.Sprintf("Running command: /sbin/ip"))
+    _, err = cmd.Output()
     if err != nil {
         logger.LogFatal(fmt.Sprintf("Error running post down command: %v", err))
     }
