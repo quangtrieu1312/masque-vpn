@@ -357,12 +357,13 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
                 }
 				logger.Trace(fmt.Sprintf("Dest IP to filter %v", destIP.String()))
                 mu.RLock()
-                if tunChan, ok := ipToTunChan[destIP.String()]; ok {
+                tunChan, ok := ipToTunChan[destIP.String()]
+                mu.RUnlock()
+				if ok {
                 	tunChan <- b[:n]
 				} else {
                     logger.Trace(fmt.Sprintf("Cannot find connection for client IP = %s. Dropping packet.", destIP.String()))
                 }
-                mu.RUnlock()
             }
         }
     }()
@@ -463,7 +464,7 @@ func handleConn(ctx *context.Context, tunChan chan []byte,  conn *connectip.Conn
 				errChan <- fmt.Errorf("failed to read from connection: %w", err)
 				return
 			}
-            logger.Trace(fmt.Sprintf("QUIC -> WAN: read %d bytes, response payload = %x", n, b[:n]))
+            logger.Trace(fmt.Sprintf("TUN -> WAN: read %d bytes, response payload = %x", n, b[:n]))
 			if err := utility.SendOnSocket(serverSocketSend, b[:n]); err != nil {
 				errChan <- fmt.Errorf("writing to server socket: %w", err)
 				return
@@ -474,7 +475,7 @@ func handleConn(ctx *context.Context, tunChan chan []byte,  conn *connectip.Conn
 	go func() {
 		for {
             data := <-tunChan
-            logger.Trace(fmt.Sprintf("TUN -> QUIC: read %d bytes, response payload = %x", len(data), data))
+            logger.Trace(fmt.Sprintf("WAN -> TUN: read %d bytes, response payload = %x", len(data), data))
 			icmp, err := conn.WritePacket(data)
 			if err != nil {
 				errChan <- fmt.Errorf("failed to write to connection: %w", err)
