@@ -1,10 +1,18 @@
 scriptFolder=$(dirname $(realpath $0))
-pushd .
-trap 'popd' EXIT SIGINT SIGHUP
+pushd . >/dev/null 2>&1
+trap 'popd >/dev/null 2>&1' EXIT SIGINT SIGHUP
 mkdir -p ./build
 rm -rf ./build/*
-sudo docker build . -f Dockerfile.build -t masque-client-builder
-sudo docker run \
-    --mount src=$scriptFolder/build,target=/build,type=bind \
-    --mount src=$scriptFolder/src,target=/src,type=bind \
-    masque-client-builder
+cd src
+go build -o ../build/masque
+if [[ $? -ne 0 ]]; then
+    echo "Build failed. Aborting."
+    exit 1
+fi
+echo "Masque binary is available at $scriptFolder/build/masque"
+cd ../
+mkdir -p /etc/masque/certs
+if [ -f /etc/masque/masque.conf ]; then
+    cp ./masque.conf.template /etc/masque/
+    echo "Cannot find /etc/masque/masque.conf. Please create one from masque.conf.template."
+fi

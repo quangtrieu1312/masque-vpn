@@ -30,7 +30,7 @@ package() {
 		"$pkgdir"/etc/masque/masque.conf.template
 
 	install -dm755 "$pkgdir"/etc/masque/certs
-	install -dm750 "$pkgdir"/var/logs/masque
+	install -dm750 "$pkgdir"/var/log/
 
 	# default_openrc() will automatically split this into the -openrc subpackage
 	install -Dm755 "$builddir"/masque.initd \
