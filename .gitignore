@@ -3,8 +3,12 @@ server/certs/server/**
 server/certs/client/**
 server/ca/server/**
 server/ca/client/**
+server/masqued.conf
+
 client/certs/**
-client/config/masque0.conf
+client/masque.conf
+
 **/.env
 **/keys.txt
 
+**/.vagrant/**
