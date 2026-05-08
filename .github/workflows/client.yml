@@ -2,8 +2,8 @@ name: Alpine APK Release
 
 on:
   push:
-    branches:
-      - "release/*"
+    tags:
+      - "v*"
 
 env:
   ALPINE_VERSION: "3.23"
@@ -156,7 +156,11 @@ jobs:
         run: |
           for apk in repo/${{ matrix.alpine_arch }}/*.apk; do
             filename=$(basename "$apk")
-            echo "Uploading $filename. This will fail if there is an existing upstream file."
+            echo "Uploading $filename. This will overwrite upstream file if there is one."
+            curl --silent \
+              --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
+              -X DELETE \
+              "https://codeberg.org/api/packages/$CODEBERG_OWNER/alpine/v${{ env.ALPINE_VERSION }}/${{ env.CODEBERG_REPO }}/${{ matrix.alpine_arch }}/$filename" || true
             curl --fail \
               --user "$CODEBERG_OWNER:$CODEBERG_TOKEN" \
               --upload-file "$apk" \
@@ -177,7 +181,7 @@ jobs:
           done
 
       - name: Attach APK to GitHub Release
-        if: startsWith(github.ref, 'refs/heads/release/')
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: release/${{ matrix.alpine_arch }}/*.apk
