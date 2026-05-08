@@ -172,7 +172,7 @@ jobs:
           # We need this since Codeberg does not like filename with arch
           # While Github cannot distiguish different .apk arch
           mkdir -p release/${{ matrix.alpine_arch }}
-          find /home/builduser/packages -name '*.apk' | while read apk; do
+          for apk in repo/${{ matrix.alpine_arch }}/*.apk; do
             filename=$(basename "$apk")
             # inject arch into filename before extension
             # masque-0.1.0-r0.apk → masque-0.1.0-r0.x86_64.apk
