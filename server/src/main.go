@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 	"os/exec"
+	"os/signal"
+    "syscall"
 
 	"golang.org/x/sys/unix"
 
@@ -26,139 +28,186 @@ import (
 	"github.com/songgao/water"
 	"github.com/vishvananda/netlink"
 	"github.com/yosida95/uritemplate/v3"
+
+    "github.com/quangtrieu1312/masque-vpn/server/constants"
+    "github.com/quangtrieu1312/masque-vpn/server/utility"
+    "github.com/quangtrieu1312/masque-vpn/server/db"
+    "github.com/quangtrieu1312/masque-vpn/server/config"
+    "github.com/quangtrieu1312/masque-vpn/server/logger"
+    "github.com/quangtrieu1312/masque-vpn/server/migration"
+    "github.com/quangtrieu1312/masque-vpn/server/service"
 )
 
-
-var serverSocketSend int
 var tunTapDevice *water.Interface
+var mu *sync.RWMutex
+var ipToTunChan map[string](chan []byte)
+var wanAddr netip.Addr
 
 func main() {
     ctx := context.WithoutCancel(context.Background())
-    logLevel := os.Getenv("LOG_LEVEL")
-    GetLoggerInstance()
-    UpdateLogLevelName(logLevel)
-    ifaceName := os.Getenv("WAN_INTERFACE")
-    bindAddr := netip.MustParseAddr(os.Getenv("BIND_ADDR"))
-    listenPort, err := strconv.Atoi(os.Getenv("LISTEN_PORT"))
+    sigc := make(chan os.Signal, 1)
+    signal.Notify(sigc,
+        syscall.SIGHUP,
+        syscall.SIGINT,
+        syscall.SIGTERM,
+        syscall.SIGQUIT)
+    go func(ctxt context.Context) {
+        <-sigc
+        RunPreDown()
+        GracefullyShutDown(ctxt)
+    }(ctx)
+
+    config.Load(&ctx)
+    logLevel := ctx.Value("LOG_LEVEL").(string)
+    logPath := ctx.Value("LOG_PATH").(string)
+    logger.UpdateLogLevelName(logLevel)
+    logger.UpdateLogPath(logPath)
+    ifaceName := ctx.Value("WAN_INTERFACE").(string)
+    bindAddr := netip.MustParseAddr(ctx.Value("BIND_ADDR").(string))
+    listenPort, err := strconv.Atoi(ctx.Value("LISTEN_PORT").(string))
 
 	if err != nil {
-		LogFatal(fmt.Sprintf("failed to parse proxy port: %v", err))
+		logger.Fatal(fmt.Sprintf("Failed to parse proxy port: %v", err))
 	}
 	bindTo := netip.AddrPortFrom( bindAddr, uint16(listenPort))
 
-	virtIp, virtSubnet, err := net.ParseCIDR(os.Getenv("VIRTUAL_IP"))
+	virtIp, virtSubnet, err := net.ParseCIDR(ctx.Value("TUNNEL_IP").(string))
 	if err != nil {
-		LogFatal(fmt.Sprintf("failed to parse VIRTUAL_IP: %v", err))
+		logger.Fatal(fmt.Sprintf("Failed to parse TUNNEL_IP: %v", err))
 	}
-	clientIp, clientSubnet, err := net.ParseCIDR(os.Getenv("CLIENT_CIDR"))
-    GetIpManagerInstance(clientIp, clientSubnet)
-	route := netip.MustParsePrefix(os.Getenv("CLIENT_ROUTE"))
-	ipProtocol, err := strconv.ParseUint(os.Getenv("FILTER_IP_PROTOCOL"), 10, 8)
+	ipProtocol, err := strconv.ParseUint(ctx.Value("FILTER_IP_PROTOCOL").(string), 10, 8)
 	if err != nil {
-		LogFatal(fmt.Sprintf("failed to parse FILTER_IP_PROTOCOL: %v", err))
+		logger.Fatal(fmt.Sprintf("failed to parse FILTER_IP_PROTOCOL: %v", err))
 	}
 
-	link, err := netlink.LinkByName(ifaceName)
+	mtu, err := strconv.ParseUint(ctx.Value("TUNNEL_MTU").(string), 10, 64)
 	if err != nil {
-		LogFatal(fmt.Sprintf("failed to get %s interface: %v", ifaceName, err))
+        mtu = 1416
+        logger.Info(fmt.Sprintf("Tunnel MTU is set to default = %d", mtu))
+    }
+    link, err := netlink.LinkByName(ifaceName)
+	if err != nil {
+		logger.Fatal(fmt.Sprintf("failed to get %s interface: %v", ifaceName, err))
 	}
 	// assuming we are only doing IPv4
 	family := netlink.FAMILY_V4
 	addrs, err := netlink.AddrList(link, family)
 	if err != nil {
-		LogFatal(fmt.Sprintf("failed to get addresses for %s: %v", ifaceName, err))
+		logger.Fatal(fmt.Sprintf("failed to get addresses for %s: %v", ifaceName, err))
 	}
 	if len(addrs) == 0 {
-		LogFatal(fmt.Sprintf("no IP addresses found for %s", ifaceName))
+		logger.Fatal(fmt.Sprintf("no IP addresses found for %s", ifaceName))
 	}
-	var ethAddr netip.Addr
 	for _, addr := range addrs {
 		a, ok := netip.AddrFromSlice(addr.IP)
 		if !ok {
-			LogFatal(fmt.Sprintf("failed to parse %s address", ifaceName))
+			logger.Fatal(fmt.Sprintf("failed to parse %s address", ifaceName))
 		}
 		if !a.IsLinkLocalUnicast() {
-			ethAddr = a
+			wanAddr = a
 			break
 		}
 	}
 
 	netBitSize, _ := virtSubnet.Mask.Size()
-	dev, err := createTunTapDevice(ctx, virtIp.String() + "/" + strconv.Itoa(netBitSize))
+	dev, err := createTunTapDevice(ctx, virtIp.String(), netBitSize, int(mtu))
 	if err != nil {
-		LogFatal(fmt.Sprintf("failed to create tun/tap device: %v", err))
+		logger.Fatal(fmt.Sprintf("failed to create tun/tap device: %v", err))
 	}
-	tunTapDevice = dev
+    tunTapDevice = dev
 
-	fdSnd, err := createSendSocket(ethAddr)
-	if err != nil {
-		LogFatal(fmt.Sprintf("failed to create send socket: %v", err))
-	}
-	serverSocketSend = fdSnd
-
-    serverCertPath := os.Getenv("SERVER_CERT_PATH")
-    serverKeyPath := os.Getenv("SERVER_KEY_PATH")
-    clientCAPath := os.Getenv("CLIENT_CA_PATH")
-	
 	upChan := make(chan bool)
-    go func() {
+    go func(ctxt context.Context) {
         for {
             isRunning := <- upChan
             if (isRunning) {
-                postUp()
+                RunPostUp(ctxt)
             } else {
-                postDown()
+                GracefullyShutDown(ctxt)
             }
         }
-    }()
-	if err := run(ctx, upChan, bindTo, route, uint8(ipProtocol), serverCertPath, serverKeyPath, clientCAPath); err != nil {
-		LogFatal(fmt.Sprintf("%v",err))
+    }(ctx)
+    Bootstrap(ctx)
+	if err := run(ctx, upChan, bindTo, uint8(ipProtocol)); err != nil {
+		logger.Fatal(fmt.Sprintf("%v",err))
 	}
-    LogInfo("Shutting down masque server.")
+    logger.Info("Shutting down masque server.")
 }
 
-func postUp() {
-    LogInfo("Running post up")
-    cmd := exec.Command("/sbin/iptables", "-t", "nat", "-A", "POSTROUTING", "-o", "eth+", "-j", "MASQUERADE")
-    LogInfo(fmt.Sprintf("Running command: /sbin/iptables"))
+
+func Bootstrap(ctx context.Context) {
+    logger.Info("Server in bootstrap phase")
+    cmd := exec.Command("/bin/bash", "-c", constants.BOOTSTRAP_SCRIPT_PATH)
     _, err := cmd.Output()
     if err != nil {
-        LogFatal(fmt.Sprintf("Error running post up command: %v", err))
+        logger.Fatal(fmt.Sprintf("Failed bootstrap scripts: %v", err))
+    }
+    MigrateData(ctx)
+}
+
+func MigrateData(ctx context.Context) {
+    // Migrate the schema
+    logger.Info("Migrating data")
+    migration.Invoke(ctx)
+}
+
+func RunPostUp(ctx context.Context) {
+    logger.Info("Server in post-up phase")
+    cmd := exec.Command("/bin/bash", "-c", constants.POSTUP_SCRIPT_PATH)
+    _, err := cmd.Output()
+    if err != nil {
+        logger.Fatal(fmt.Sprintf("Cannot run postup scripts: %v", err))
+    }
+    RunManagementService(ctx)
+}
+
+func RunPreDown() {
+    logger.Info("Server in pre-down phase")
+    cmd := exec.Command("/bin/bash", "-c", constants.PREDOWN_SCRIPT_PATH)
+    _, err := cmd.Output()
+    if err != nil {
+        logger.Fatal(fmt.Sprintf("Cannot run predown scripts: %v", err))
     }
 }
 
-func postDown() {
-    LogInfo("Running post down")
+func GracefullyShutDown(ctx context.Context) {
+    logger.Info("Shutting down")
+    db.CloseConnection()
 }
 
-func createTunTapDevice(ctx context.Context, virtCIDR string) (*water.Interface, error) {
+func createTunTapDevice(ctx context.Context, virtIp string, virtPrefixLen int, mtu int) (*water.Interface, error) {
 	dev, err := water.New(water.Config{DeviceType: water.TUN})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create TUN device: %w", err)
+		return nil, fmt.Errorf("Failed to create TUN device: %w", err)
 	}
-	LogInfo(fmt.Sprintf("created TUN device: %s", dev.Name()))
+	logger.Info(fmt.Sprintf("Created TUN device: %s", dev.Name()))
 
 	link, err := netlink.LinkByName(dev.Name())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get TUN interface: %w", err)
+		return nil, fmt.Errorf("Failed to get TUN interface: %w", err)
 	}
 	if err := netlink.LinkSetUp(link); err != nil {
 		return nil, fmt.Errorf("failed to bring up TUN interface: %w", err)
 	}
-    addr, err := netlink.ParseAddr(virtCIDR)
+    addr, err := netlink.ParseAddr(virtIp + "/" + strconv.Itoa(virtPrefixLen))
     if err != nil {
         return nil, fmt.Errorf("Failed to assign IP to %v: %v", dev.Name(), err)
     }
     netlink.AddrAdd(link, addr)
-    prefixAddr, err := netip.ParseAddr(GetAssignSubnet().IP.String())
+    netlink.LinkSetMTU(link, mtu)
+    _, clientSubnet, err := net.ParseCIDR(ctx.Value("CLIENT_CIDR").(string))
     if err != nil {
         return  nil, fmt.Errorf("Failed to parse address: %w", err)
     }
-    bitmask, _ := GetAssignSubnet().Mask.Size()
-    prefix := netip.PrefixFrom(prefixAddr, bitmask)
-    route := &netlink.Route{ LinkIndex: link.Attrs().Index, Dst: PrefixToIPNet(prefix) }
+    ip := clientSubnet.IP.String()
+    bitmask, _ := clientSubnet.Mask.Size()
+    prefixAddr, err := netip.ParsePrefix(ip + "/" + strconv.Itoa(bitmask))
+    if err != nil {
+        return  nil, fmt.Errorf("Failed to parse prefix: %w", err)
+    }
+    route := &netlink.Route{ LinkIndex: link.Attrs().Index, Dst: utility.PrefixToIPNet(prefixAddr) }
 	if err := netlink.RouteAdd(route); err != nil {
-		return nil, fmt.Errorf("Failed to add route: %w", err)
+		return nil, fmt.Errorf("Failed to add route %v: %w", route, err)
 	}
 	return dev, nil
 }
@@ -173,15 +222,15 @@ func createSendSocket(addr netip.Addr) (int, error) {
 func createSendSocketIPv4(addr netip.Addr) (int, error) {
 	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_RAW, unix.IPPROTO_RAW)
 	if err != nil {
-		return 0, fmt.Errorf("creating socket: %w", err)
+		return 0, fmt.Errorf("Creating socket: %w", err)
 	}
 	if err := unix.SetsockoptInt(fd, unix.IPPROTO_IP, unix.IP_HDRINCL, 1); err != nil {
-		return 0, fmt.Errorf("setting IP_HDRINCL: %w", err)
+		return 0, fmt.Errorf("Setting IP_HDRINCL: %w", err)
 	}
     sa := &unix.SockaddrInet4{Port: 0} // raw sockets don't use ports
     copy(sa.Addr[:], addr.AsSlice())
     if err := unix.Bind(fd, sa); err != nil {
-        return 0, fmt.Errorf("binding socket ipv4 to %s: %w", addr, err)
+        return 0, fmt.Errorf("Binding socket ipv4 to %s: %w", addr, err)
     }
 	return fd, nil
 }
@@ -189,15 +238,15 @@ func createSendSocketIPv4(addr netip.Addr) (int, error) {
 func createSendSocketIPv6(addr netip.Addr) (int, error) {
 	fd, err := unix.Socket(unix.AF_INET6, unix.SOCK_RAW, unix.IPPROTO_RAW)
 	if err != nil {
-		return 0, fmt.Errorf("creating socket: %w", err)
+		return 0, fmt.Errorf("Creating socket: %w", err)
 	}
 	if err := unix.SetsockoptInt(fd, unix.IPPROTO_IPV6, unix.IPV6_HDRINCL, 1); err != nil {
-		return 0, fmt.Errorf("setting IPV6_HDRINCL: %w", err)
+		return 0, fmt.Errorf("Setting IPV6_HDRINCL: %w", err)
 	}
     sa := &unix.SockaddrInet6{Port: 0} // raw sockets don't use ports
     copy(sa.Addr[:], addr.AsSlice())
     if err := unix.Bind(fd, sa); err != nil {
-        return 0, fmt.Errorf("binding socket ipv6 to %s: %w", addr, err)
+        return 0, fmt.Errorf("Binding socket ipv6 to %s: %w", addr, err)
     }
 	return fd, nil
 }
@@ -206,41 +255,68 @@ func htons(host uint16) uint16 {
 	return (host<<8)&0xff00 | (host>>8)&0xff
 }
 
-func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, route netip.Prefix, ipProtocol uint8, serverCertPath string, serverKeyPath string, clientCAPath string) error {
+func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProtocol uint8) error {
     ctx, cancel := context.WithCancel(ctxt)
     defer cancel()
-    udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: bindTo.Addr().AsSlice(), Port: int(bindTo.Port())})
+	mark := 31289
+	lc := net.ListenConfig{
+		Control: func(network, addr string, c syscall.RawConn) error {
+			var soErr error
+			err := c.Control(func(fd uintptr) {
+				soErr = unix.SetsockoptInt(
+					int(fd),
+					unix.SOL_SOCKET, // level  : socket layer
+					unix.SO_MARK,    // optname: SO_MARK
+					mark,            // optval : 51820
+				)
+			})
+			if err != nil {
+				return fmt.Errorf("RawConn.Control: %w", err)
+			}
+			if soErr != nil {
+				return fmt.Errorf("setsockopt(SOL_SOCKET, SO_MARK, %d): %w"+
+					" — process needs CAP_NET_ADMIN", mark, soErr)
+			}
+			return nil
+		},
+	}
+	pc, err := lc.ListenPacket(context.Background(), "udp", fmt.Sprintf("%v:%d",bindTo.Addr().String(), bindTo.Port()))
 	if err != nil {
-		return fmt.Errorf("failed to listen on UDP: %w", err)
+		return fmt.Errorf("Failed to listen on UDP: %w", err)
+	}
+	defer pc.Close()
+ 
+	udpConn, ok := pc.(*net.UDPConn)
+	if !ok {
+		return fmt.Errorf("expected *net.UDPConn, got %T", pc)
 	}
 	defer udpConn.Close()
 
-	cert, err := tls.LoadX509KeyPair(serverCertPath, serverKeyPath)
+	cert, err := tls.LoadX509KeyPair(constants.SERVER_CERT_PATH, constants.SERVER_KEY_PATH)
 	if err != nil {
-		return fmt.Errorf("failed to load TLS certificate: %w", err)
+		return fmt.Errorf("Failed to load TLS certificate: %w", err)
 	}
 	certPool, err := x509.SystemCertPool()
     if err != nil {
-        panic(err)
+		return fmt.Errorf("Cannot create cert pool: %w", err)
     }
-    caCertPEM, err := os.ReadFile(clientCAPath)
+    caCertPEM, err := os.ReadFile(constants.CLIENT_CA_PATH)
     if err != nil {
-		panic(err)
+        return fmt.Errorf("Cannot read client CA:", err)
 	}
-    ok := certPool.AppendCertsFromPEM(caCertPEM)
+    ok = certPool.AppendCertsFromPEM(caCertPEM)
     if !ok {
-		panic("invalid cert in CA PEM")
+		return fmt.Errorf("Invalid cert")
 	}
 	template := uritemplate.MustNew(fmt.Sprintf("https://masque:%d/vpn", bindTo.Port()))
-	ln, err := quic.ListenEarly(
+	serverConf := &tls.Config{
+	    Certificates:          []tls.Certificate{cert},
+	    ClientAuth:            tls.RequireAndVerifyClientCert,
+	    ClientCAs:             certPool,
+	}
+    ln, err := quic.ListenEarly(
 		udpConn,
-		http3.ConfigureTLSConfig(
-            &tls.Config{
-                ClientAuth: tls.RequireAndVerifyClientCert,
-                ClientCAs: certPool,
-                Certificates: []tls.Certificate{cert},
-            },
-        ),
+		http3.ConfigureTLSConfig(serverConf),
 		&quic.Config{
             EnableDatagrams: true,
             MaxIdleTimeout: 30*time.Second,
@@ -253,37 +329,52 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, route 
 
 	p := connectip.Proxy{}
 	mux := http.NewServeMux()
-    ipToTunChan := make(map[string](chan []byte))
-    mu := &sync.RWMutex{}
+    ipToTunChan = make(map[string](chan []byte))
+    mu = &sync.RWMutex{}
     go func() {
         for {
 	        b := make([]byte, 1500)
 	        n, err := tunTapDevice.Read(b)
-			LogTrace(fmt.Sprintf("Unfiltered data %v: %x", tunTapDevice.Name(), b[:n]))
+			logger.Trace(fmt.Sprintf("Unfiltered data %v: %x", tunTapDevice.Name(), b[:n]))
             if err != nil {
-                LogError(fmt.Sprintf("Cannot read TUN/TAP device %v: %v", tunTapDevice.Name(), err))
+                logger.Error(fmt.Sprintf("Cannot read TUN/TAP device %v: %v", tunTapDevice.Name(), err))
                 cancel()
                 break
             } else {
                 // assuming we are only doing IPv4
                 destIP, ok := netip.AddrFromSlice(b[16:20])
                 if ! ok {
-				    LogTrace(fmt.Sprintf("Cannot parse data to IP. Dropping packet."))
+				    logger.Trace(fmt.Sprintf("Cannot parse data to IP. Dropping packet."))
                     continue
                 }
-				LogTrace(fmt.Sprintf("Dest IP to filter %v", destIP.String()))
+				logger.Trace(fmt.Sprintf("Dest IP to filter %v", destIP.String()))
                 mu.RLock()
-                if tunChan, ok := ipToTunChan[destIP.String()]; ok {
-                	tunChan <- b[:n]
-				} else {
-                    LogTrace(fmt.Sprintf("Cannot find connection for client IP = %s. Dropping packet.", destIP.String()))
-                }
+                tunChan, ok := ipToTunChan[destIP.String()]
                 mu.RUnlock()
+				if ok {
+                	pkt := make([]byte, n)
+    				copy(pkt, b[:n])
+    				select {
+    					case tunChan <- pkt:
+    					default:
+        					logger.Trace(fmt.Sprintf("Client %s channel full, dropping packet.", destIP.String()))
+    				}
+				} else {
+                    logger.Trace(fmt.Sprintf("Cannot find connection for client IP = %s. Dropping packet.", destIP.String()))
+                }
             }
         }
     }()
 	mux.HandleFunc("/vpn", func(w http.ResponseWriter, r *http.Request) {
-		LogDebug(fmt.Sprintf("Handle new HTTP client"))
+        commonName := r.TLS.PeerCertificates[0].Subject.CommonName
+    	clientId, err := strconv.ParseInt(commonName, 10, 64)
+		if err != nil {
+			logger.Info(fmt.Sprintf("Got invalid TLS common name %v: %v", commonName, err))
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		logger.Debug(fmt.Sprintf("Handle new HTTP client %v", clientId))
+        conCtx := context.WithValue(ctx, "clientId", clientId)
 		req, err := connectip.ParseRequest(r, template)
 		if err != nil {
 			var perr *connectip.RequestParseError
@@ -300,18 +391,14 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, route 
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+		fdSnd, err := createSendSocket(wanAddr)
+		if err != nil {
+			logger.Fatal(fmt.Sprintf("failed to create send socket: %v", err))
+		}
 
-        localChan := make(chan string)
-        tunChan := make(chan []byte)
-        go func() {
-            clientIp := <-localChan
-			LogInfo(fmt.Sprintf("Got new client with IP %v", clientIp))
-            mu.Lock()
-            ipToTunChan[clientIp] = tunChan
-            mu.Unlock()
-        }()
-		if err := handleConn(ctx, localChan, tunChan, conn, route, ipProtocol); err != nil {
-			LogError(fmt.Sprintf("failed to handle connection: %v", err))
+		if err := handleConn(&conCtx, make(chan []byte, 256), conn, ipProtocol, fdSnd); err != nil {
+			logger.Error(fmt.Sprintf("failed to handle connection: %v", err))
+			return
 		}
 	})
 
@@ -327,32 +414,46 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, route 
 	return nil
 }
 
-func handleConn(contxt context.Context, parentChan chan<- string, tunChan <-chan []byte,  conn *connectip.Conn, route netip.Prefix, ipProtocol uint8) error {
-	ctx, cancel := context.WithTimeout(contxt, 5*time.Second)
-	defer cancel()
-    LogDebug("Start connectip flow")
+func handleConn(ctx *context.Context, tunChan chan []byte,  conn *connectip.Conn, ipProtocol uint8, fd int) error {
+	setupCtx, setupCancel := context.WithTimeout(*ctx, 5*time.Second)
+	defer setupCancel()
+    logger.Debug("Start connectip flow")
     // Get the next unassigned address
     // And assign prefix = IP/32 to the client
     // Note:
     // We can assign any subnet size here but I'm using /32 for simplicity
     // I may want to go back to this hardcoded number when I see issues for site-to-side VPN
-    peerAddr, _, perr := GetAndIncrementNextIp()
+    clientId := (*ctx).Value("clientId").(int64)
+    peerAddr, perr := service.AssignIPToClient(setupCtx, clientId)
     if perr != nil {
         return fmt.Errorf("Failed to get available IP: %w", perr)
     }
-    addr, e := netip.ParseAddr(peerAddr.String())
+    addr, e := netip.ParseAddr(peerAddr)
     if e != nil {
         return fmt.Errorf("Failed to parse address: %w", e)
     }
     bitmask := 32
     ipPrefix := netip.PrefixFrom(addr, bitmask)
-	if err := conn.AssignAddresses(ctx, []netip.Prefix{ipPrefix}); err != nil {
+	if err := conn.AssignAddresses(setupCtx, []netip.Prefix{ipPrefix}); err != nil {
 		return fmt.Errorf("failed to assign addresses: %w", err)
 	}
-    parentChan <- peerAddr.String()
-	if err := conn.AdvertiseRoute(ctx, []connectip.IPRoute{
-		{StartIP: route.Addr(), EndIP: LastIP(route), IPProtocol: ipProtocol},
-	}); err != nil {
+    mu.Lock()
+    ipToTunChan[peerAddr] = tunChan
+    mu.Unlock()
+    clientResources, cerr := service.GetClientResources(setupCtx, clientId)
+    if cerr != nil {
+        return cerr
+    }
+    clientRoutes := []connectip.IPRoute{}
+    for i := 0; i < len(*clientResources); i++ {
+        r, e := netip.ParsePrefix((*clientResources)[i].Value)
+        if e != nil {
+            continue
+        }
+        connectipRoute := connectip.IPRoute{StartIP: r.Addr(), EndIP: utility.LastIPAddr(r), IPProtocol: ipProtocol}
+        clientRoutes = append(clientRoutes, connectipRoute)
+    }
+	if err := conn.AdvertiseRoute(setupCtx, clientRoutes); err != nil {
 		return fmt.Errorf("failed to advertise route: %w", err)
 	}
 
@@ -362,11 +463,11 @@ func handleConn(contxt context.Context, parentChan chan<- string, tunChan <-chan
 			b := make([]byte, 1500)
 			n, err := conn.ReadPacket(b)
 			if err != nil {
-				errChan <- fmt.Errorf("failed to read from connection: %w", err)
+				errChan <- fmt.Errorf("failed to read from MASQUE connection: %w", err)
 				return
 			}
-            LogTrace(fmt.Sprintf("QUIC -> WAN: read %d bytes, response payload = %x", n, b[:n]))
-			if err := sendOnSocket(serverSocketSend, b[:n]); err != nil {
+            logger.Trace(fmt.Sprintf("TUN -> WAN: read %d bytes, response payload = %x", n, b[:n]))
+			if err := utility.SendOnSocket(fd, b[:n]); err != nil {
 				errChan <- fmt.Errorf("writing to server socket: %w", err)
 				return
 			}
@@ -376,24 +477,34 @@ func handleConn(contxt context.Context, parentChan chan<- string, tunChan <-chan
 	go func() {
 		for {
             data := <-tunChan
-            LogTrace(fmt.Sprintf("TUN -> QUIC: read %d bytes, response payload = %x", len(data), data))
+			logger.Debug(fmt.Sprintf("tunChan len=%d cap=256 for client %s", len(tunChan), peerAddr))
+            logger.Trace(fmt.Sprintf("WAN -> TUN: read %d bytes, response payload = %x", len(data), data))
 			icmp, err := conn.WritePacket(data)
 			if err != nil {
-				errChan <- fmt.Errorf("failed to write to connection: %w", err)
-				return
+				if errors.Is(err, net.ErrClosed) {
+        			errChan <- err  // fatal, connection is gone
+        			return
+    			}
+				// maybe the packet queue is just full
+				// as a VPN server we drop packet
+				// and transportation layer (L4) can retry
+				errChan <- fmt.Errorf("failed to write to MASQUE connection, drop packet: %w", err)
 			}
 			if len(icmp) > 0 {
-				if err := sendOnSocket(serverSocketSend, icmp); err != nil {
-					LogError(fmt.Sprintf("failed to send ICMP packet: %v", err))
-                    return
+				if err := utility.SendOnSocket(fd, icmp); err != nil {
+					logger.Error(fmt.Sprintf("failed to send ICMP packet: %v", err))
 				}
 			}
 		}
 	}()
 
 	err := <-errChan
-	LogError(fmt.Sprintf("error proxying: %v", err))
+	logger.Error(fmt.Sprintf("error proxying: %v", err))
+	mu.Lock()
+	delete(ipToTunChan, peerAddr)
+	mu.Unlock()
 	conn.Close()
 	<-errChan // wait for the other goroutine to finish
+	unix.Close(fd)
 	return err
 }
