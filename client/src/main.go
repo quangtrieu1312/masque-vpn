@@ -192,8 +192,6 @@ func healthCheck(ctx context.Context) error {
 }
 
 func establishMASQUEConn(ctx context.Context, serverAddr netip.AddrPort, serverFQDN string, enableKeyLog bool, keyLogPath string) ([]connectip.IPRoute, []netip.Prefix, *connectip.Conn, error) {
-	ctx, cancel := context.WithTimeout(ctx,15*time.Second)
-	defer cancel()
     fwmark, err := strconv.ParseInt(ctx.Value("FWMARK").(string), 10, 32)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to parse FWMARK config to number: %w", err)
@@ -256,8 +254,10 @@ func establishMASQUEConn(ctx context.Context, serverAddr netip.AddrPort, serverF
 	    }
         tlsConf.KeyLogWriter = keyLog
     }
+	dialCtx, dialCancel := context.WithTimeout(ctx, 15*time.Second)
+	defer dialCancel()
 	conn, err := quic.Dial(
-		ctx,
+		dialCtx,
 		udpConn,
 		&net.UDPAddr{IP: serverAddr.Addr().AsSlice(), Port: int(serverAddr.Port())},
 		tlsConf,
@@ -275,7 +275,7 @@ func establishMASQUEConn(ctx context.Context, serverAddr netip.AddrPort, serverF
 	hconn := tr.NewClientConn(conn)
 
 	template := uritemplate.MustNew(fmt.Sprintf("https://masque:%d/vpn", serverAddr.Port()))
-	ipconn, rsp, err := connectip.Dial(ctx, hconn, template)
+	ipconn, rsp, err := connectip.Dial(dialCtx, hconn, template)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to dial connect-ip connection: %w", err)
 	}
@@ -337,13 +337,13 @@ func tunnel(ctx context.Context, connID string, ipconn *connectip.Conn, dev *wat
 			b := make([]byte, 1500)
 			n, rerr := ipconn.ReadPacket(b)
             if rerr != nil {
-				errChan <- fmt.Errorf("conn#%s Failed to read from MASQUE tunnel: %w", connID, rerr)
+				errChan <- fmt.Errorf("%s Failed to read from MASQUE tunnel: %w", connID, rerr)
             }
-            logger.LogTrace(fmt.Sprintf("conn#%s Read %d bytes from tunnel: %x", connID, n, b[:n]))
+            logger.LogTrace(fmt.Sprintf("%s Read %d bytes from tunnel: %x", connID, n, b[:n]))
             wn, werr := dev.Write(b[:n])
-			logger.LogDebug(fmt.Sprintf("conn#%s Wrote %d bytes to TUN device %s, err: %v", connID, wn, dev.Name(), werr))
+			logger.LogDebug(fmt.Sprintf("%s Wrote %d bytes to TUN device %s, err: %v", connID, wn, dev.Name(), werr))
             if werr != nil {
-				errChan <- fmt.Errorf("conn#%s Failed to write to TUN/TAP device: %w", connID, werr)
+				errChan <- fmt.Errorf("%s Failed to write to TUN/TAP device: %w", connID, werr)
             }
 		}
 	}()
@@ -353,17 +353,17 @@ func tunnel(ctx context.Context, connID string, ipconn *connectip.Conn, dev *wat
 			b := make([]byte, 1500)
             n, rerr := dev.Read(b)
             if rerr != nil {
-                errChan <- fmt.Errorf("conn#%s Failed to read from TUN/TAP device: %w", connID, rerr)
+                errChan <- fmt.Errorf("%s Failed to read from TUN/TAP device: %w", connID, rerr)
 			}
-            logger.LogTrace(fmt.Sprintf("conn#%s Read %d bytes from TUN/TAP device: %x", connID, n, b[:n]))
+            logger.LogTrace(fmt.Sprintf("%s Read %d bytes from TUN/TAP device: %x", connID, n, b[:n]))
 			icmp, werr := ipconn.WritePacket(b[:n])
             if werr != nil {
-				errChan <- fmt.Errorf("conn#%s Failed to write to MASQUE tunnel: %w", connID, werr)
+				errChan <- fmt.Errorf("%s Failed to write to MASQUE tunnel: %w", connID, werr)
             }
 			if len(icmp) > 0 {
-				logger.LogTrace(fmt.Sprintf("conn#%s Sending ICMP packet on %s", connID, dev.Name()))
+				logger.LogTrace(fmt.Sprintf("%s Sending ICMP packet on %s", connID, dev.Name()))
 				if _, err := dev.Write(icmp); err != nil {
-                    errChan <- fmt.Errorf("conn#%s Failed to write ICMP packet: %v", connID, err)
+                    errChan <- fmt.Errorf("%s Failed to write ICMP packet: %v", connID, err)
 				}
 			}
 		}
