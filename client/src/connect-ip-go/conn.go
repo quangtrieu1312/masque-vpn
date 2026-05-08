@@ -385,9 +385,6 @@ func (c *Conn) composeDatagram(b []byte) ([]byte, error) {
 	if len(b) == 0 {
 		return nil, nil
 	}
-	pkt := make([]byte, len(b))
-    copy(pkt, b)
-    b = pkt
 	switch v := ipVersion(b); v {
 	default:
 		return nil, fmt.Errorf("connect-ip: unknown IP versions: %d", v)
