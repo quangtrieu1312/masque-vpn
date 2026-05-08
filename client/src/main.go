@@ -148,6 +148,7 @@ func main() {
     }(ctx)
     go func(contxt context.Context) {
         errorThreshold := 5
+		connID := fmt.Sprintf("conn#%d", 6-errorThreshold)
         logger.LogDebug(fmt.Sprintf("Retry threshold = %d", errorThreshold))
         for {
             logger.LogTrace(fmt.Sprintf("Number of retry attempts left = %d", errorThreshold))
@@ -177,7 +178,7 @@ func main() {
                 ipconn.Close()
                 dev.Close()
             }()
-            tunnel(connCtx, ipconn, dev, isRunningChan, eChan)
+            tunnel(connCtx, connID, ipconn, dev, isRunningChan, eChan)
         }
     }(ctx)
     <-ctx.Done()
@@ -330,19 +331,19 @@ func establishTunTapAndRoutes(ctx context.Context, routes []connectip.IPRoute, l
     return dev, nil
 }
 
-func tunnel(ctx context.Context, ipconn *connectip.Conn, dev *water.Interface, isRunningChan chan bool, errChan chan error) {
+func tunnel(ctx context.Context, connID string, ipconn *connectip.Conn, dev *water.Interface, isRunningChan chan bool, errChan chan error) {
     go func() {
 		for {
 			b := make([]byte, 1500)
 			n, rerr := ipconn.ReadPacket(b)
             if rerr != nil {
-				errChan <- fmt.Errorf("Failed to read from MASQUE tunnel: %w", rerr)
+				errChan <- fmt.Errorf("conn#%s Failed to read from MASQUE tunnel: %w", connID, rerr)
             }
-            logger.LogTrace(fmt.Sprintf("Read %d bytes from tunnel: %x", n, b[:n]))
+            logger.LogTrace(fmt.Sprintf("conn#%s Read %d bytes from tunnel: %x", connID, n, b[:n]))
             wn, werr := dev.Write(b[:n])
-			logger.LogDebug(fmt.Sprintf("Wrote %d bytes to TUN device %s, err: %v", wn, dev.Name(), werr))
+			logger.LogDebug(fmt.Sprintf("conn#%s Wrote %d bytes to TUN device %s, err: %v", connID, wn, dev.Name(), werr))
             if werr != nil {
-				errChan <- fmt.Errorf("Failed to write to TUN/TAP device: %w", werr)
+				errChan <- fmt.Errorf("conn#%s Failed to write to TUN/TAP device: %w", connID, werr)
             }
 		}
 	}()
@@ -352,17 +353,17 @@ func tunnel(ctx context.Context, ipconn *connectip.Conn, dev *water.Interface, i
 			b := make([]byte, 1500)
             n, rerr := dev.Read(b)
             if rerr != nil {
-                errChan <- fmt.Errorf("Failed to read from TUN/TAP device: %w", rerr)
+                errChan <- fmt.Errorf("conn#%s Failed to read from TUN/TAP device: %w", connID, rerr)
 			}
-            logger.LogTrace(fmt.Sprintf("Read %d bytes from TUN/TAP device: %x", n, b[:n]))
+            logger.LogTrace(fmt.Sprintf("conn#%s Read %d bytes from TUN/TAP device: %x", connID, n, b[:n]))
 			icmp, werr := ipconn.WritePacket(b[:n])
             if werr != nil {
-				errChan <- fmt.Errorf("Failed to write to MASQUE tunnel: %w", werr)
+				errChan <- fmt.Errorf("conn#%s Failed to write to MASQUE tunnel: %w", connID, werr)
             }
 			if len(icmp) > 0 {
-				logger.LogTrace(fmt.Sprintf("Sending ICMP packet on %s", dev.Name()))
+				logger.LogTrace(fmt.Sprintf("conn#%s Sending ICMP packet on %s", connID, dev.Name()))
 				if _, err := dev.Write(icmp); err != nil {
-                    errChan <- fmt.Errorf("Failed to write ICMP packet: %v", err)
+                    errChan <- fmt.Errorf("conn#%s Failed to write ICMP packet: %v", connID, err)
 				}
 			}
 		}
