@@ -17,6 +17,7 @@ import (
 	"time"
 	"golang.org/x/sys/unix"
 	"syscall"
+	"os/signal"
 
 	connectip "github.com/quic-go/connect-ip-go"
 
@@ -56,7 +57,7 @@ func PostDown() {
     }
     cmd = exec.Command("/sbin/ip", "route", "flush", "table", "9000")
     logger.LogInfo(fmt.Sprintf("Running command: /sbin/ip"))
-    _, err = cmd.Output()
+	_, err = cmd.Output()
     if err != nil {
         logger.LogFatal(fmt.Sprintf("Error running post down command: %v", err))
     }
@@ -65,6 +66,17 @@ func PostDown() {
 func main() {
     ctx, cancel := context.WithCancel(context.Background())
     defer cancel()
+	sigChan := make(chan os.Signal, 1)
+    signal.Notify(sigChan,
+        syscall.SIGHUP,
+        syscall.SIGINT,
+        syscall.SIGTERM,
+        syscall.SIGQUIT)
+	go func() {
+    	<-sigChan
+    	PostDown()
+    	cancel()
+	}()
     config.Load(&ctx)
     logLevel := ctx.Value("LOG_LEVEL").(string)
     logPath := constants.LOG_PATH
@@ -113,7 +125,7 @@ func main() {
     }
     keyLogPath := ctx.Value("KEY_LOG_PATH").(string)
     errChan := make(chan error)
-    tunneling := make(chan bool)
+    isRunningChan := make(chan bool)
     go func(contxt context.Context) {
         for {
             select {
@@ -121,7 +133,7 @@ func main() {
                 logger.LogError(fmt.Sprintf("Encounter error: %v", cerr))
                 cancel()
                 return
-            case isRunning := <- tunneling:
+            case isRunning := <- isRunningChan:
                 if (isRunning) {
                     logger.LogInfo("Masque is up")
                     PostUp()
@@ -129,8 +141,8 @@ func main() {
                     logger.LogInfo("Masque is down")
                     PostDown()
                     cancel()
+                	return
                 }
-                return
             }
         }
     }(ctx)
@@ -155,15 +167,17 @@ func main() {
                 continue
             }
 	        logger.LogDebug(fmt.Sprintf("Created TUN device: %s in the background", dev.Name()))
-            eChan := make(chan error) 
+            eChan := make(chan error)
+			connCtx, connCancel := context.WithCancel(ctx)
             go func() {
                 cerr := <-eChan
                 errorThreshold--
                 logger.LogError(fmt.Sprintf("Tunneling error: %v", cerr))
+				connCancel()
                 ipconn.Close()
                 dev.Close()
             }()
-            tunnel(ctx, ipconn, dev, tunneling, eChan)
+            tunnel(connCtx, ipconn, dev, isRunningChan, eChan)
         }
     }(ctx)
     <-ctx.Done()
@@ -322,14 +336,13 @@ func tunnel(ctx context.Context, ipconn *connectip.Conn, dev *water.Interface, i
 			b := make([]byte, 1500)
 			n, rerr := ipconn.ReadPacket(b)
             if rerr != nil {
-				errChan <- fmt.Errorf("Failed to read from QUIC tunnel: %w", rerr)
-                isRunningChan <- false
+				errChan <- fmt.Errorf("Failed to read from MASQUE tunnel: %w", rerr)
             }
             logger.LogTrace(fmt.Sprintf("Read %d bytes from tunnel: %x", n, b[:n]))
-            _, werr := dev.Write(b[:n])
+            wn, werr := dev.Write(b[:n])
+			logger.LogDebug(fmt.Sprintf("Wrote %d bytes to TUN device %s, err: %v", wn, dev.Name(), werr))
             if werr != nil {
 				errChan <- fmt.Errorf("Failed to write to TUN/TAP device: %w", werr)
-                isRunningChan <- false
             }
 		}
 	}()
@@ -340,19 +353,16 @@ func tunnel(ctx context.Context, ipconn *connectip.Conn, dev *water.Interface, i
             n, rerr := dev.Read(b)
             if rerr != nil {
                 errChan <- fmt.Errorf("Failed to read from TUN/TAP device: %w", rerr)
-                isRunningChan <- false
 			}
             logger.LogTrace(fmt.Sprintf("Read %d bytes from TUN/TAP device: %x", n, b[:n]))
 			icmp, werr := ipconn.WritePacket(b[:n])
             if werr != nil {
-				errChan <- fmt.Errorf("Failed to write to QUIC tunnel: %w", werr)
-                isRunningChan <- false
+				errChan <- fmt.Errorf("Failed to write to MASQUE tunnel: %w", werr)
             }
 			if len(icmp) > 0 {
 				logger.LogTrace(fmt.Sprintf("Sending ICMP packet on %s", dev.Name()))
 				if _, err := dev.Write(icmp); err != nil {
                     errChan <- fmt.Errorf("Failed to write ICMP packet: %v", err)
-                    isRunningChan <- false
 				}
 			}
 		}
