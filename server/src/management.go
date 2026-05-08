@@ -1,0 +1,539 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
+	"strconv"
+    "net/url"
+
+	"github.com/quangtrieu1312/masque-vpn/server/constants"
+	"github.com/quangtrieu1312/masque-vpn/server/logger"
+	"github.com/quangtrieu1312/masque-vpn/server/request"
+	"github.com/quangtrieu1312/masque-vpn/server/response"
+	"github.com/quangtrieu1312/masque-vpn/server/service"
+)
+
+func RunManagementService(ctx context.Context) {
+    fd, err := net.Listen("unix", constants.MANAGEMENT_SOCKET_PATH)
+    if err != nil {
+        logger.Fatal(fmt.Sprintf("Cannot listen on unix socket %v: %v", constants.MANAGEMENT_SOCKET_PATH, err))
+    }
+	mux := http.NewServeMux()
+	mux.HandleFunc("/client/{id}", func(w http.ResponseWriter, r *http.Request) {
+        method := r.Method
+        id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+        if err != nil {
+            logger.Trace(fmt.Sprintf("Invalid client id: %v", err))
+            w.WriteHeader(http.StatusBadRequest)
+            return
+        }
+        switch method {
+        case http.MethodGet:
+            data, err := service.GetClientByID(ctx, id)
+            if err != nil {
+                logger.Debug(fmt.Sprintf("GET /client/%v error: %v", id, err))
+                w.WriteHeader(http.StatusBadRequest)
+            } else {
+                jsonBytes, err := json.Marshal(*data)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("Cannot marshal client data to json"))
+                    w.WriteHeader(http.StatusInternalServerError)
+                } else {
+                    w.Write(jsonBytes)
+                }
+            }
+            break
+        case http.MethodPost:
+            var body request.UpdateClientName
+            err := json.NewDecoder(r.Body).Decode(&body)
+            if err != nil {
+                logger.Debug(fmt.Sprintf("Invalid POST /client/%v: %v", id, err))
+                w.WriteHeader(http.StatusBadRequest)
+                return
+            }
+            ok, err := service.UpdateClientName(ctx, id, body.Name)
+            if ok {
+                w.WriteHeader(http.StatusOK)
+            } else {
+                logger.Debug(fmt.Sprintf("Cannot update client name: %v", err))
+                w.WriteHeader(http.StatusBadRequest)
+            }
+            break
+        default:
+            w.WriteHeader(http.StatusMethodNotAllowed)
+        }
+    })
+	mux.HandleFunc("/client", func(w http.ResponseWriter, r *http.Request) {
+        method := r.Method
+        params, err := url.ParseQuery(r.URL.RawQuery)
+        if err != nil {
+            logger.Fatal(fmt.Sprintf("Cannot parse request param for GET /client: %v", err))
+            return
+        }
+        switch method {
+        case http.MethodGet:
+            data, err := service.GetAllClients(ctx)
+            if err != nil {
+                logger.Debug(fmt.Sprintf("GET /client error: %v", err))
+                w.WriteHeader(http.StatusBadRequest)
+            } else {
+                jsonBytes, err := json.Marshal(*data)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("Cannot marshal client data to json: %v", err))
+                    w.WriteHeader(http.StatusInternalServerError)
+                } else {
+                    w.Write(jsonBytes)
+                }
+            }
+            break
+        case http.MethodPost:
+            requestType := params.Get("type")
+            switch requestType {
+            case "upsert":
+                var body request.UpsertClients
+                err := json.NewDecoder(r.Body).Decode(&body)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("Invalid POST /client: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                    return
+                }
+                clientIDs, err := service.UpsertClients(ctx, body.Names)
+                if err == nil && clientIDs != nil && len(*clientIDs)==len(body.Names) {
+					for i, v := range body.Names {
+						tmp1:=[]int64{}
+						tmp2 :=[]int64{}
+						roleIDs, e := service.UpsertRoles(ctx, append([]string{}, v))
+						if e != nil {
+							err = e
+                        	logger.Debug(fmt.Sprintf("Cannot upsert role for new client %v: %v", body.Names[i], err))
+							break
+						} else {
+							tmp1 = append(tmp1, (*roleIDs)[0])
+							tmp2 = append(tmp2, (*clientIDs)[i])
+							_, e := service.AssignRolesToClients(ctx, tmp1, tmp2)
+							if e != nil {
+								err = e
+                        		logger.Debug(fmt.Sprintf("Cannot assign role %v for new client %v: %v", tmp1, tmp2, err))
+								break
+							}
+						}
+					}
+                    if err != nil {
+                        w.WriteHeader(http.StatusInternalServerError)
+						return
+					}
+					responseBody := response.UpsertClients{*clientIDs}
+                    jsonBytes, err := json.Marshal(responseBody)
+                    if err != nil {
+                        logger.Debug(fmt.Sprintf("Cannot marshal clientIDs to json: %v", err))
+                        w.WriteHeader(http.StatusInternalServerError)
+                    } else {
+                        w.Write(jsonBytes)
+                    }
+                } else {
+                    if err != nil {
+                        logger.Debug(fmt.Sprintf("Cannot upsert clients: %v", err))
+                    }
+                    w.WriteHeader(http.StatusBadRequest)
+                }
+                break
+            case "assign":
+                var body request.AssignRolesToClients
+                err := json.NewDecoder(r.Body).Decode(&body)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("Invalid POST /client: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                    return
+                }
+                ok, err := service.AssignRolesToClients(ctx, body.RoleIDs, body.ClientIDs)
+                if ok {
+                    w.WriteHeader(http.StatusOK)
+                } else {
+                	logger.Debug(fmt.Sprintf("Cannot assign role to client: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                }
+                break
+            case "unassign":
+                var body request.UnassignRolesToClients
+                err := json.NewDecoder(r.Body).Decode(&body)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("Invalid POST /client: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                    return
+                }
+                ok, err := service.UnassignRolesToClients(ctx, body.RoleIDs, body.ClientIDs)
+                if ok {
+                    w.WriteHeader(http.StatusOK)
+                } else {
+                	logger.Debug(fmt.Sprintf("Cannot unassign role to client: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                }
+                break
+            default:
+                w.WriteHeader(http.StatusBadRequest)
+            }
+            break
+        case http.MethodDelete:
+            var body request.DeleteClients
+            err := json.NewDecoder(r.Body).Decode(&body)
+            if err != nil {
+                logger.Debug(fmt.Sprintf("Invalid DELETE /client: %v", err))
+                w.WriteHeader(http.StatusBadRequest)
+                return
+            }
+            ok, err := service.DeleteClients(ctx,body.IDs)
+            if ok {
+                w.WriteHeader(http.StatusOK)
+            } else {
+                logger.Debug(fmt.Sprintf("Cannot delete client: %v", err))
+                w.WriteHeader(http.StatusBadRequest)
+            }
+            break
+        default:
+            w.WriteHeader(http.StatusMethodNotAllowed)
+        }
+    })
+	mux.HandleFunc("/role/{id}", func(w http.ResponseWriter, r *http.Request) {
+        method := r.Method
+        id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+        if err != nil {
+            logger.Trace(fmt.Sprintf("Invalid role id: %v", err))
+            w.WriteHeader(http.StatusBadRequest)
+            return
+        }
+        switch method {
+        case http.MethodGet:
+            data, err := service.GetRoleByID(ctx, id)
+            if err != nil {
+                logger.Debug(fmt.Sprintf("GET /role/%v error: %v", id, err))
+                w.WriteHeader(http.StatusBadRequest)
+            } else {
+                jsonBytes, err := json.Marshal(*data)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("Cannot marshal role data to json: %v", err))
+                    w.WriteHeader(http.StatusInternalServerError)
+                } else {
+                    w.Write(jsonBytes)
+                }
+            }
+            break
+        case http.MethodPost:
+            var body request.UpdateRoleName
+            err := json.NewDecoder(r.Body).Decode(&body)
+            if err != nil {
+                logger.Debug(fmt.Sprintf("Invalid POST /role/%v: %v", id, err))
+                w.WriteHeader(http.StatusBadRequest)
+                return
+            }
+            ok, err := service.UpdateRoleName(ctx, id, body.Name)
+            if ok {
+                w.WriteHeader(http.StatusOK)
+            } else {
+                logger.Debug(fmt.Sprintf("Cannot update role name: %v", err))
+                w.WriteHeader(http.StatusBadRequest)
+            }
+            break
+        default:
+            w.WriteHeader(http.StatusMethodNotAllowed)
+        }
+    })
+	mux.HandleFunc("/role", func(w http.ResponseWriter, r *http.Request) {
+        method := r.Method
+        params, err := url.ParseQuery(r.URL.RawQuery)
+        if err != nil {
+            logger.Fatal(fmt.Sprintf("Cannot parse request param for GET /role: %v", err))
+            return
+        }
+        switch method {
+        case http.MethodGet:
+            data, err := service.GetAllRoles(ctx)
+            if err != nil {
+                logger.Debug(fmt.Sprintf("GET /role error: %v", err))
+                w.WriteHeader(http.StatusBadRequest)
+            } else {
+                jsonBytes, err := json.Marshal(*data)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("Cannot marshal role data to json: %v", err))
+                    w.WriteHeader(http.StatusInternalServerError)
+                } else {
+                    w.Write(jsonBytes)
+                }
+            }
+            break
+        case http.MethodPost:
+            requestType := params.Get("type")
+            switch requestType {
+            case "upsert":
+                var body request.UpsertRoles
+                err := json.NewDecoder(r.Body).Decode(&body)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("Invalid POST /role: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                    return
+                }
+                _, err = service.UpsertRoles(ctx, body.Names)
+                if err == nil {
+                    w.WriteHeader(http.StatusOK)
+                } else {
+                	logger.Debug(fmt.Sprintf("Cannot upsert role: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                }
+                break
+            case "client":
+                var body request.FetchClientRoles
+                err := json.NewDecoder(r.Body).Decode(&body)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("Invalid POST /role: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                    return
+                }
+                data, err := service.GetClientRoles(ctx, body.ClientID)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("POST /role error: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                } else {
+                    jsonBytes, err := json.Marshal(*data)
+                    if err != nil {
+                        logger.Debug(fmt.Sprintf("Cannot marshal role data to json: %v", err))
+                        w.WriteHeader(http.StatusInternalServerError)
+                    } else {
+                        w.Write(jsonBytes)
+                    }
+                }
+                break
+            case "assign":
+                var body request.AssignResourcesToRoles
+                err := json.NewDecoder(r.Body).Decode(&body)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("Invalid POST /role: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                    return
+                }
+                ok, err := service.AssignResourcesToRoles(ctx, body.ResourceIDs, body.RoleIDs)
+                if ok {
+                    w.WriteHeader(http.StatusOK)
+                } else {
+                	logger.Debug(fmt.Sprintf("Cannot assign resource to role: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                }
+                break
+            case "unassign":
+                var body request.UnassignResourcesToRoles
+                err := json.NewDecoder(r.Body).Decode(&body)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("Invalid POST /role: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                    return
+                }
+                ok, err := service.UnassignResourcesToRoles(ctx, body.ResourceIDs, body.RoleIDs)
+                if ok {
+                    w.WriteHeader(http.StatusOK)
+                } else {
+                	logger.Debug(fmt.Sprintf("Cannot unassign resource to role: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                }
+                break
+            default:
+                w.WriteHeader(http.StatusBadRequest)
+            }
+            break
+        case http.MethodDelete:
+            var body request.DeleteRoles
+            err := json.NewDecoder(r.Body).Decode(&body)
+            if err != nil {
+                logger.Debug(fmt.Sprintf("Invalid DELETE /role: %v", err))
+                w.WriteHeader(http.StatusBadRequest)
+                return
+            }
+            ok, err := service.DeleteRoles(ctx,body.IDs)
+            if ok {
+                w.WriteHeader(http.StatusOK)
+            } else {
+                logger.Debug(fmt.Sprintf("Cannot delete role: %v", err))
+                w.WriteHeader(http.StatusBadRequest)
+            }
+            break
+        default:
+            w.WriteHeader(http.StatusMethodNotAllowed)
+        }
+    })
+	mux.HandleFunc("/resource/{id}", func(w http.ResponseWriter, r *http.Request) {
+        method := r.Method
+        id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+        if err != nil {
+            logger.Trace(fmt.Sprintf("Invalid resource id: %v", err))
+            w.WriteHeader(http.StatusBadRequest)
+            return
+        }
+        switch method {
+        case http.MethodGet:
+            data, err := service.GetResourceByID(ctx, id)
+            if err != nil {
+                logger.Debug(fmt.Sprintf("GET /resource/%v error: %v", id, err))
+                w.WriteHeader(http.StatusBadRequest)
+            } else {
+                jsonBytes, err := json.Marshal(*data)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("Cannot marshal resource data to json: %v", err))
+                    w.WriteHeader(http.StatusInternalServerError)
+                } else {
+                    w.Write(jsonBytes)
+                }
+            }
+            break
+        case http.MethodPost:
+            var body request.UpdateResourceName
+            err := json.NewDecoder(r.Body).Decode(&body)
+            if err != nil {
+                logger.Debug(fmt.Sprintf("Invalid POST /client/%v: %v", id, err))
+                w.WriteHeader(http.StatusBadRequest)
+                return
+            }
+            ok, err := service.UpdateResourceName(ctx, id, body.Name)
+            if ok {
+                w.WriteHeader(http.StatusOK)
+            } else {
+                logger.Debug(fmt.Sprintf("Cannot update resource name: %v", err))
+                w.WriteHeader(http.StatusBadRequest)
+            }
+            break
+        default:
+            w.WriteHeader(http.StatusMethodNotAllowed)
+        }
+    })
+	mux.HandleFunc("/resource", func(w http.ResponseWriter, r *http.Request) {
+        method := r.Method
+        params, err := url.ParseQuery(r.URL.RawQuery)
+        if err != nil {
+            logger.Fatal(fmt.Sprintf("Cannot parse request param for GET /client: %v", err))
+            return
+        }
+        switch method {
+        case http.MethodGet:
+            data, err := service.GetAllResources(ctx)
+            if err != nil {
+                logger.Debug(fmt.Sprintf("GET /resource error: %v", err))
+                w.WriteHeader(http.StatusBadRequest)
+            } else {
+                jsonBytes, err := json.Marshal(*data)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("Cannot marshal resource data to json: %v", err))
+                    w.WriteHeader(http.StatusInternalServerError)
+                } else {
+                    w.Write(jsonBytes)
+                }
+            }
+            break
+        case http.MethodPost:
+            requestType := params.Get("type")
+            switch requestType {
+            case "upsert":
+                var body request.UpsertResources
+                err := json.NewDecoder(r.Body).Decode(&body)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("Invalid POST /resource: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                    return
+                }
+                _, err = service.UpsertResources(ctx, body.Resources)
+                if err == nil {
+                    w.WriteHeader(http.StatusOK)
+                } else {
+                	logger.Debug(fmt.Sprintf("Cannot upsert resource: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                }
+                break
+            case "client":
+                var body request.FetchClientResources
+                err := json.NewDecoder(r.Body).Decode(&body)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("Invalid POST /resource: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                    return
+                }
+                data, err := service.GetClientResources(ctx, body.ClientID)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("POST /resource error: %v", err))
+                    w.WriteHeader(http.StatusBadRequest)
+                } else {
+                    jsonBytes, err := json.Marshal(*data)
+                    if err != nil {
+                        logger.Debug(fmt.Sprintf("Cannot marshal resource data to json: %v", err))
+                        w.WriteHeader(http.StatusInternalServerError)
+                    } else {
+                        w.Write(jsonBytes)
+                    }
+                }
+                break
+            default:
+                w.WriteHeader(http.StatusBadRequest)
+            }
+            break
+        case http.MethodDelete:
+            var body request.DeleteResources
+            err := json.NewDecoder(r.Body).Decode(&body)
+            if err != nil {
+                logger.Debug(fmt.Sprintf("Invalid DELETE /resource: %v", err))
+                w.WriteHeader(http.StatusBadRequest)
+                return
+            }
+            ok, err := service.DeleteResources(ctx,body.IDs)
+            if ok {
+                w.WriteHeader(http.StatusOK)
+            } else {
+                logger.Debug(fmt.Sprintf("Cannot delete resource: %v", err))
+                w.WriteHeader(http.StatusBadRequest)
+            }
+            break
+        default:
+            w.WriteHeader(http.StatusMethodNotAllowed)
+        }
+    })
+	mux.HandleFunc("/dhcp", func(w http.ResponseWriter, r *http.Request) {
+        method := r.Method
+        switch method {
+        case http.MethodGet:
+            data, err := service.GetAllAvailableIPRanges(ctx)
+            if err != nil {
+                logger.Debug(fmt.Sprintf("GET /dhcp error: %v", err))
+                w.WriteHeader(http.StatusBadRequest)
+            } else {
+                jsonBytes, err := json.Marshal(*data)
+                if err != nil {
+                    logger.Debug(fmt.Sprintf("Cannot marshal dhcp data to json: %v", err))
+                    w.WriteHeader(http.StatusInternalServerError)
+                } else {
+                    w.Write(jsonBytes)
+                }
+            }
+            break
+        case http.MethodPut:
+            var body request.ResetDHCP
+            err := json.NewDecoder(r.Body).Decode(&body)
+            if err != nil {
+                logger.Debug(fmt.Sprintf("Invalid POST /dhcp: %v", err))
+                w.WriteHeader(http.StatusBadRequest)
+                return
+            }
+            ok, err := service.ResetDHCP(ctx, body.FirstIP, body.LastIP)
+            if ok {
+                w.WriteHeader(http.StatusOK)
+            } else {
+                logger.Debug(fmt.Sprintf("Cannot reset DHCP: %v", err))
+                w.WriteHeader(http.StatusBadRequest)
+            }
+            break
+        default:
+            w.WriteHeader(http.StatusMethodNotAllowed)
+        }
+    })
+	server := http.Server{
+		Handler:         mux,
+	}
+	go server.Serve(fd)
+	defer server.Close()
+    <-ctx.Done()
+}

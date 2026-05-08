@@ -1,0 +1,5 @@
+LOG_LEVEL=info
+ENABLE_KEY_LOG=false
+KEY_LOG_PATH=/tmp/masque_keylog.txt
+SERVER=FQDN:443
+FWMARK=9484
