@@ -3,15 +3,13 @@ module github.com/quangtrieu1312/masque-vpn/client
 go 1.25.0
 
 require (
-	github.com/quic-go/connect-ip-go v0.1.0
+	github.com/quic-go/connect-ip-go v0.1.1-0.20260112014126-d741d418c992
 	github.com/quic-go/quic-go v0.59.0
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/vishvananda/netlink v1.3.0
 	github.com/yosida95/uritemplate/v3 v3.0.2
 	golang.org/x/sys v0.35.0
 )
-
-replace github.com/quic-go/connect-ip-go v0.1.0 => ./connect-ip-go
 
 require (
 	github.com/dunglas/httpsfv v1.0.2 // indirect

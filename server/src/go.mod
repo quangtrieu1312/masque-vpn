@@ -6,7 +6,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.33
 	github.com/praserx/ipconv v1.2.2
-	github.com/quic-go/connect-ip-go v0.1.0
+	github.com/quic-go/connect-ip-go v0.1.1-0.20260112014126-d741d418c992
 	github.com/quic-go/quic-go v0.59.0
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/vishvananda/netlink v1.3.0
