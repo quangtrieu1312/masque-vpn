@@ -477,6 +477,7 @@ func handleConn(ctx *context.Context, tunChan chan []byte,  conn *connectip.Conn
 	go func() {
 		for {
             data := <-tunChan
+			logger.Debug(fmt.Sprintf("tunChan len=%d cap=256 for client %s", len(tunChan), peerAddr))
             logger.Trace(fmt.Sprintf("WAN -> TUN: read %d bytes, response payload = %x", len(data), data))
 			icmp, err := conn.WritePacket(data)
 			if err != nil {
