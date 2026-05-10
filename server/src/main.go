@@ -290,9 +290,9 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 					mark,            // optval : 9484
 				)
 				soErr = unix.SetsockoptInt(int(fd), unix.IPPROTO_UDP, unix.UDP_SEGMENT, 1)
-				fmt.Println("GSO probe result:", soErr)
+				fmt.Println("GSO probe result: %w", soErr)
 				soErr = unix.SetsockoptInt(int(fd), unix.IPPROTO_UDP, unix.UDP_GRO, 1)
-				fmt.Println("GRO probe result:", soErr)
+				fmt.Println("GRO probe result: %w", soErr)
 			})
 			if err != nil {
 				return fmt.Errorf("RawConn.Control: %w", err)
@@ -467,6 +467,11 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
     mu.Lock()
     ipToTunChan[peerAddr] = tunChan
     mu.Unlock()
+	defer func() {
+    	mu.Lock()
+    	delete(ipToTunChan, peerAddr)
+    	mu.Unlock()
+	}()
     clientResources, cerr := service.GetClientResources(setupCtx, clientId)
     if cerr != nil {
         return cerr
@@ -546,9 +551,6 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
 
 	err := <-errChan
 	logger.Error(fmt.Sprintf("error proxying: %v", err))
-	mu.Lock()
-	delete(ipToTunChan, peerAddr)
-	mu.Unlock()
 	close(tunChan)
 	for pkt := range tunChan {
 		packetPool.Put(pkt)
