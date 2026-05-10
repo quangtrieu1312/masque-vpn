@@ -289,10 +289,6 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 					unix.SO_MARK,    // optname: SO_MARK
 					mark,            // optval : 9484
 				)
-				soErr = unix.SetsockoptInt(int(fd), unix.IPPROTO_UDP, unix.UDP_SEGMENT, 1)
-				fmt.Printf(fmt.Sprintf("GSO probe result: %w", soErr))
-				soErr = unix.SetsockoptInt(int(fd), unix.IPPROTO_UDP, unix.UDP_GRO, 1)
-				fmt.Printf(fmt.Sprintf("GRO probe result: %w", soErr))
 			})
 			if err != nil {
 				return fmt.Errorf("RawConn.Control: %w", err)
