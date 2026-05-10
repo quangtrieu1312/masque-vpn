@@ -18,7 +18,8 @@ import (
 	"golang.org/x/sys/unix"
 	"syscall"
 	"os/signal"
-
+	"runtime"
+	
 	connectip "github.com/quic-go/connect-ip-go"
 
 	"github.com/quic-go/quic-go"
@@ -161,14 +162,14 @@ func main() {
                 errorThreshold--
                 continue
 	        }
-            dev, derr := establishTunTapAndRoutes(ctx, routes, localPrefixes)
+            devs, derr := establishTunTapAndRoutes(ctx, routes, localPrefixes)
             if derr != nil {
                 logger.LogError(fmt.Sprintf("Failed to establish TUN/TAP device or VPN routes: %v", derr))
                 errorThreshold--
                 continue
             }
-	        logger.LogDebug(fmt.Sprintf("Created TUN device: %s in the background", dev.Name()))
-            eChan := make(chan error, 2)
+	        logger.LogDebug(fmt.Sprintf("Created TUN device: %s in the background", devs[0].Name()))
+            eChan := make(chan error, runtime.NumCPU() + 1)
 			connCtx, connCancel := context.WithCancel(ctx)
             go func() {
                 cerr := <-eChan
@@ -176,9 +177,11 @@ func main() {
                 logger.LogError(fmt.Sprintf("Tunneling error: %v", cerr))
 				connCancel()
                 ipconn.Close()
-                dev.Close()
+				for _, dev := range devs {
+					dev.Close()
+				}
             }()
-            tunnel(connCtx, connID, ipconn, dev, isRunningChan, eChan)
+            tunnel(connCtx, connID, ipconn, devs, isRunningChan, eChan)
         }
     }(ctx)
     <-ctx.Done()
@@ -201,6 +204,10 @@ func establishMASQUEConn(ctx context.Context, serverAddr netip.AddrPort, serverF
         	var soErr error
         	err := c.Control(func(fd uintptr) {
             	soErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_MARK, int(fwmark))
+				soErr = unix.SetsockoptInt(int(fd), unix.IPPROTO_UDP, unix.UDP_SEGMENT, 1)
+				fmt.Println("GSO probe result:", soErr)
+				soErr = unix.SetsockoptInt(int(fd), unix.IPPROTO_UDP, unix.UDP_GRO, 1)
+				fmt.Println("GRO probe result:", soErr)
         	})
         	if err != nil {
             	return err
@@ -296,30 +303,41 @@ func establishMASQUEConn(ctx context.Context, serverAddr netip.AddrPort, serverF
 	return routes, localPrefixes, ipconn, nil
 }
 
-func establishTunTapAndRoutes(ctx context.Context, routes []connectip.IPRoute, localPrefixes []netip.Prefix) (*water.Interface, error) {
-	dev, err := water.New(water.Config{DeviceType: water.TUN})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create TUN device: %w", err)
-	}
-	logger.LogDebug(fmt.Sprintf("created TUN device: %s", dev.Name()))
+func establishTunTapAndRoutes(ctx context.Context, routes []connectip.IPRoute, localPrefixes []netip.Prefix) ([]*water.Interface, error) {
+    numQueues := runtime.NumCPU()
+    devs := make([]*water.Interface, numQueues)
 
-	link, err := netlink.LinkByName(dev.Name())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get TUN interface: %w", err)
-	}
-	for _, p := range localPrefixes {
-		if err := netlink.AddrAdd(link, &netlink.Addr{IPNet: utility.PrefixToIPNet(p)}); err != nil {
-			return nil, fmt.Errorf("failed to add address assigned by peer %s: %w", p, err)
-		}
-	}
-	if err := netlink.LinkSetUp(link); err != nil {
-		return nil, fmt.Errorf("failed to bring up TUN interface: %w", err)
-	}
+    for i := range devs {
+        dev, err := water.New(water.Config{
+            DeviceType: water.TUN,
+            PlatformSpecificParams: water.PlatformSpecificParams{
+                MultiQueue: true,
+            },
+        })
+        if err != nil {
+            return nil, fmt.Errorf("failed to create TUN device queue %d: %w", i, err)
+        }
+        devs[i] = dev
+    }
+
+    // link setup only needs to happen once, on devs[0]
+    link, err := netlink.LinkByName(devs[0].Name())
+    if err != nil {
+        return nil, fmt.Errorf("failed to get TUN interface: %w", err)
+    }
+    for _, p := range localPrefixes {
+        if err := netlink.AddrAdd(link, &netlink.Addr{IPNet: utility.PrefixToIPNet(p)}); err != nil {
+            return nil, fmt.Errorf("failed to add address assigned by peer: %w", err)
+        }
+    }
+    if err := netlink.LinkSetUp(link); err != nil {
+        return nil, fmt.Errorf("failed to bring up TUN interface: %w", err)
+    }
 
 	for _, route := range routes {
 		logger.LogDebug(fmt.Sprintf("adding routes for %s - %s (protocol: %d)", route.StartIP, route.EndIP, route.IPProtocol))
 		for _, prefix := range route.Prefixes() {
-            cmd := exec.Command("/sbin/ip", "route", "add", prefix.String() , "dev", dev.Name(), "table", "9000")
+            cmd := exec.Command("/sbin/ip", "route", "add", prefix.String() , "dev", devs[0].Name(), "table", "9000")
             logger.LogInfo(fmt.Sprintf("Adding route: %v", prefix.String()))
             _, err := cmd.Output()
             if err != nil {
@@ -328,54 +346,64 @@ func establishTunTapAndRoutes(ctx context.Context, routes []connectip.IPRoute, l
 		}
 	}
     PreUp(&ctx)
-    return dev, nil
+    return devs, nil
 }
 
-func tunnel(ctx context.Context, connID string, ipconn *connectip.Conn, dev *water.Interface, isRunningChan chan bool, errChan chan error) {
-    go func() {
-		for {
-			b := make([]byte, 1500)
-			n, rerr := ipconn.ReadPacket(b)
-            if rerr != nil {
-        		select {
-            		case errChan <- fmt.Errorf("%s fatal read from MASQUE: %w", connID, rerr):
-            		default:
-            	}
-            	return  // fatal, connection is gone
-            }
-            logger.LogTrace(fmt.Sprintf("%s Read %d bytes from tunnel: %x", connID, n, b[:n]))
-            wn, werr := dev.Write(b[:n])
-			logger.LogDebug(fmt.Sprintf("%s Wrote %d bytes to TUN device %s, err: %v", connID, wn, dev.Name(), werr))
-            if werr != nil {
-				errChan <- fmt.Errorf("%s Failed to write to TUN/TAP device: %w", connID, werr)
-            }
-		}
-	}()
-
+func tunnel(ctx context.Context, connID string, ipconn *connectip.Conn, devs []*water.Interface, isRunningChan chan bool, errChan chan error) {
+	// ONE goroutine reads from MASQUE, round-robins to TUN queues
 	go func() {
-		for {
-			b := make([]byte, 1500)
-            n, rerr := dev.Read(b)
-            if rerr != nil {
-				select {
-            		case errChan <- fmt.Errorf("%s fatal read from TUN: %w", connID, rerr):
-            		default:
+    	i := 0
+        b := make([]byte, 1500)
+    	for {
+        	n, err := ipconn.ReadPacket(b)
+        	if err != nil {
+            	select {
+                	case errChan <- fmt.Errorf("fatal read from MASQUE: %w", err):
+                	default:
             	}
-            	return  // fatal, TUN fd is gone
-			}
-            logger.LogTrace(fmt.Sprintf("%s Read %d bytes from TUN/TAP device: %x", connID, n, b[:n]))
-			icmp, werr := ipconn.WritePacket(b[:n])
-            if werr != nil {
-				errChan <- fmt.Errorf("%s Failed to write to MASQUE tunnel: %w", connID, werr)
-            }
-			if len(icmp) > 0 {
-				logger.LogTrace(fmt.Sprintf("%s Sending ICMP packet on %s", connID, dev.Name()))
-				if _, err := dev.Write(icmp); err != nil {
-                    errChan <- fmt.Errorf("%s Failed to write ICMP packet: %v", connID, err)
-				}
-			}
-		}
+            	return
+        	}
+        	if _, err := devs[i%len(devs)].Write(b[:n]); err != nil {
+            	select {
+                	case errChan <- fmt.Errorf("failed to write to TUN queue %d: %w", i%len(devs), err):
+                	default:
+            	}
+        	}
+        	i++
+    	}
 	}()
+	
+	// N goroutines each read from their own TUN queue fd → write to MASQUE
+	for i, dev := range devs {
+    	go func(d *water.Interface, id int) {
+            b := make([]byte, 1500)
+        	for {
+            	n, err := d.Read(b)
+            	if err != nil {
+                	select {
+                    	case errChan <- fmt.Errorf("%s queue#%d fatal read from TUN: %w", connID, id, err):
+                    	default:
+                	}
+                	return
+            	}
+            	icmp, err := ipconn.WritePacket(b[:n])
+            	if err != nil {
+                	select {
+                    	case errChan <- fmt.Errorf("%s queue#%d failed to write to MASQUE: %w", connID, id, err):
+                    	default:
+                	}
+            	}
+            	if len(icmp) > 0 {
+                	if _, err := d.Write(icmp); err != nil {
+                    	select {
+                        	case errChan <- fmt.Errorf("%s queue#%d failed to write ICMP: %w", connID, id, err):
+                        	default:
+                    	}
+                	}
+            	}
+        	}
+    	}(dev, i)
+	}
     isRunningChan <- true
     <-ctx.Done()
 }
