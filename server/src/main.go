@@ -463,8 +463,18 @@ func handleConn(ctx *context.Context, tunChan chan []byte,  conn *connectip.Conn
 			b := make([]byte, 1500)
 			n, err := conn.ReadPacket(b)
 			if err != nil {
-				errChan <- fmt.Errorf("failed to read from MASQUE connection: %w", err)
-				return
+				if errors.Is(err, net.ErrClosed) {
+        			// fatal, connection is gone
+					logger.Error(fmt.Sprintf("failed to read from a closed connection: %w", err))
+					errChan <- err
+        			return
+    			} else {
+        			// also fatal since conn.ReadPacket() masks minor errors
+					// while silently dropping malformed packets
+					logger.Error(fmt.Sprintf("encoutered unexpected error while reading from connection: %w", err))
+        			errChan <- err
+        			return
+				}
 			}
             logger.Trace(fmt.Sprintf("TUN -> WAN: read %d bytes, response payload = %x", n, b[:n]))
 			if err := utility.SendOnSocket(fd, b[:n]); err != nil {
@@ -476,19 +486,24 @@ func handleConn(ctx *context.Context, tunChan chan []byte,  conn *connectip.Conn
 
 	go func() {
 		for {
-            data := <-tunChan
+            data, ok := <-tunChan
+			if !ok {
+				return
+			}
 			logger.Debug(fmt.Sprintf("tunChan len=%d cap=256 for client %s", len(tunChan), peerAddr))
             logger.Trace(fmt.Sprintf("WAN -> TUN: read %d bytes, response payload = %x", len(data), data))
 			icmp, err := conn.WritePacket(data)
 			if err != nil {
 				if errors.Is(err, net.ErrClosed) {
-        			errChan <- err  // fatal, connection is gone
+        			// fatal, connection is gone
+					logger.Error(fmt.Sprintf("failed to write to a closed connection: %w", err))
+					errChan <- err
         			return
     			}
 				// maybe the packet queue is just full
 				// as a VPN server we drop packet
 				// and transportation layer (L4) can retry
-				errChan <- fmt.Errorf("failed to write to MASQUE connection, drop packet: %w", err)
+				logger.Error(fmt.Sprintf("failed to write to connection, drop packet: %w", err))
 			}
 			if len(icmp) > 0 {
 				if err := utility.SendOnSocket(fd, icmp); err != nil {
@@ -502,6 +517,7 @@ func handleConn(ctx *context.Context, tunChan chan []byte,  conn *connectip.Conn
 	logger.Error(fmt.Sprintf("error proxying: %v", err))
 	mu.Lock()
 	delete(ipToTunChan, peerAddr)
+	close(tunChan)
 	mu.Unlock()
 	conn.Close()
 	<-errChan // wait for the other goroutine to finish
