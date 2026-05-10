@@ -205,9 +205,9 @@ func establishMASQUEConn(ctx context.Context, serverAddr netip.AddrPort, serverF
         	err := c.Control(func(fd uintptr) {
             	soErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_MARK, int(fwmark))
 				soErr = unix.SetsockoptInt(int(fd), unix.IPPROTO_UDP, unix.UDP_SEGMENT, 1)
-				fmt.Sprintf("GSO probe result: %w", soErr)
+				fmt.Printf(fmt.Sprintf("GSO probe result: %w", soErr))
 				soErr = unix.SetsockoptInt(int(fd), unix.IPPROTO_UDP, unix.UDP_GRO, 1)
-				fmt.Sprintf("GRO probe result: %w", soErr)
+				fmt.Printf(fmt.Sprintf("GRO probe result: %w", soErr))
         	})
         	if err != nil {
             	return err
