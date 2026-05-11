@@ -5,8 +5,6 @@ services:
       - NET_ADMIN
       - NET_RAW
     privileged: true
-    environment:
-      - QUIC_GO_DISABLE_GSO:false
     devices:
       - /dev/net/tun:/dev/net/tun
     ports:

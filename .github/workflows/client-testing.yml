@@ -60,6 +60,9 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CC: musl-gcc
         run: |
+          pushd .
+          cd vendor/quiche && cargo build --release --features ffi
+          popd
           cd client/src
           go build \
             -buildvcs=false \

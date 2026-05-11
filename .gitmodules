@@ -1,0 +1,3 @@
+[submodule "vendor/quiche"]
+	path = vendor/quiche
+	url = git@github.com:quangtrieu1312/quiche

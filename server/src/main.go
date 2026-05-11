@@ -1,7 +1,6 @@
 //go:build linux
 
 package main
-
 import (
 	"context"
 	"crypto/tls"
