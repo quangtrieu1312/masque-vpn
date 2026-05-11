@@ -188,19 +188,33 @@ func createTunTapDevice(ctx context.Context, virtIp string, virtPrefixLen int, m
     numQueues := runtime.NumCPU()
     devs := make([]*water.Interface, numQueues)
 
-    for i := range devs {
-        dev, err := water.New(water.Config{
-            DeviceType: water.TUN,
-            PlatformSpecificParams: water.PlatformSpecificParams{
-                MultiQueue: true,
-            },
-        })
-        if err != nil {
-            return nil, fmt.Errorf("failed to create TUN device queue %d: %w", i, err)
-        }
-        devs[i] = dev
-    }
-	logger.Info(fmt.Sprintf("Created TUN device: %s", devs[0].Name()))
+	// First device — let OS assign name
+	var err error
+	devs[0], err = water.New(water.Config{
+    	DeviceType: water.TUN,
+    	PlatformSpecificParams: water.PlatformSpecificParams{
+        	MultiQueue: true,
+    	},
+	})
+	if err != nil {
+    	return nil, fmt.Errorf("failed to create TUN device queue 0: %w", err)
+	}
+	devName := devs[0].Name()
+	logger.Info(fmt.Sprintf("Created TUN device: %s", devName))
+	// Subsequent queues — MUST use same name
+	for i := 1; i < numQueues; i++ {
+    	dev, err := water.New(water.Config{
+        	DeviceType: water.TUN,
+        	PlatformSpecificParams: water.PlatformSpecificParams{
+            	Name:       devName, // same device, new fd
+            	MultiQueue: true,
+        	},
+    	})
+    	if err != nil {
+        	return nil, fmt.Errorf("failed to create TUN queue %d: %w", i, err)
+    	}
+    	devs[i] = dev
+	}
 
 	link, err := netlink.LinkByName(devs[0].Name())
 	if err != nil {
@@ -493,18 +507,18 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
 			if err != nil {
 				if errors.Is(err, net.ErrClosed) {
         			// fatal, connection is gone
-					logger.Error(fmt.Sprintf("failed to read from a closed connection: %w", err))
+					logger.Error(fmt.Sprintf("failed to read from a closed connection: %v", err))
 					errChan <- err
         			return
     			} else {
         			// also fatal since conn.ReadPacket() masks minor errors
 					// while silently dropping malformed packets
-					logger.Error(fmt.Sprintf("encoutered unexpected error while reading from connection: %w", err))
+					logger.Error(fmt.Sprintf("encoutered unexpected error while reading from connection: %v", err))
         			errChan <- err
         			return
 				}
 			}
-            logger.Trace(fmt.Sprintf("TUN -> WAN: read %d bytes, response payload = %x", n, b[:n]))
+            logger.Trace(fmt.Sprintf("TUN -> WAN: read %d bytes, payload = %x", n, b[:n]))
 			if err := utility.SendOnSocket(fd, b[:n]); err != nil {
 				errChan <- fmt.Errorf("writing to server socket: %w", err)
 				return
@@ -522,7 +536,7 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
     			}
 				return
 			}
-            logger.Trace(fmt.Sprintf("WAN -> TUN: read %d bytes, response payload = %x", pkt.n, pkt))
+            logger.Trace(fmt.Sprintf("WAN -> TUN: read %d bytes, payload = %x", pkt.n, pkt))
         	icmp, err := conn.WritePacket(pkt.buf[:pkt.n])
         	packetPool.Put(pkt) // return to pool immediately after use
 			if err != nil {

@@ -302,22 +302,35 @@ func establishMASQUEConn(ctx context.Context, serverAddr netip.AddrPort, serverF
 func establishTunTapAndRoutes(ctx context.Context, routes []connectip.IPRoute, localPrefixes []netip.Prefix) ([]*water.Interface, error) {
     numQueues := runtime.NumCPU()
     devs := make([]*water.Interface, numQueues)
-
-    for i := range devs {
-        dev, err := water.New(water.Config{
-            DeviceType: water.TUN,
-            PlatformSpecificParams: water.PlatformSpecificParams{
-                MultiQueue: true,
-            },
-        })
-        if err != nil {
-            return nil, fmt.Errorf("failed to create TUN device queue %d: %w", i, err)
-        }
-        devs[i] = dev
-    }
+	// First device — let OS assign name
+	var err error
+	devs[0], err = water.New(water.Config{
+    	DeviceType: water.TUN,
+    	PlatformSpecificParams: water.PlatformSpecificParams{
+        	MultiQueue: true,
+    	},
+	})
+	if err != nil {
+    	return nil, fmt.Errorf("failed to create TUN device queue 0: %w", err)
+	}
+	devName := devs[0].Name()
+	// Subsequent queues — MUST use same name
+	for i := 1; i < numQueues; i++ {
+    	dev, err := water.New(water.Config{
+        	DeviceType: water.TUN,
+        	PlatformSpecificParams: water.PlatformSpecificParams{
+            	Name:       devName, // same device, new fd
+            	MultiQueue: true,
+        	},
+    	})
+    	if err != nil {
+        	return nil, fmt.Errorf("failed to create TUN queue %d: %w", i, err)
+    	}
+    	devs[i] = dev
+	}
 
     // link setup only needs to happen once, on devs[0]
-    link, err := netlink.LinkByName(devs[0].Name())
+    link, err := netlink.LinkByName(devName)
     if err != nil {
         return nil, fmt.Errorf("failed to get TUN interface: %w", err)
     }
@@ -333,7 +346,7 @@ func establishTunTapAndRoutes(ctx context.Context, routes []connectip.IPRoute, l
 	for _, route := range routes {
 		logger.LogDebug(fmt.Sprintf("adding routes for %s - %s (protocol: %d)", route.StartIP, route.EndIP, route.IPProtocol))
 		for _, prefix := range route.Prefixes() {
-            cmd := exec.Command("/sbin/ip", "route", "add", prefix.String() , "dev", devs[0].Name(), "table", "9000")
+            cmd := exec.Command("/sbin/ip", "route", "add", prefix.String() , "dev", devName, "table", "9000")
             logger.LogInfo(fmt.Sprintf("Adding route: %v", prefix.String()))
             _, err := cmd.Output()
             if err != nil {
