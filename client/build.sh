@@ -11,10 +11,10 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 echo "Masque binary is available at $scriptFolder/build/masque"
-popd
 mkdir -p /etc/masque/certs
 if [ -f /etc/masque/masque.conf ]; then
-    cp ./masque.conf.template /etc/masque/
+    cp /etc/masque/masque.conf.template /etc/masque/
     echo "Cannot find /etc/masque/masque.conf. Please create one from masque.conf.template."
 fi
+popd
 
