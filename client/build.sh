@@ -2,9 +2,6 @@ scriptFolder=$(dirname $(realpath $0))
 pushd . >/dev/null 2>&1
 trap 'popd >/dev/null 2>&1' EXIT SIGINT SIGHUP
 cd $scriptFolder
-pushd . >/dev/null 2>&1
-cd vendor/quiche && cargo build --release --features ffi
-popd
 mkdir -p ./build
 rm -rf ./build/*
 cd src
