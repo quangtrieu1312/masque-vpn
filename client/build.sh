@@ -13,7 +13,7 @@ fi
 echo "Masque binary is available at $scriptFolder/build/masque"
 mkdir -p /etc/masque/certs
 if [ -f /etc/masque/masque.conf ]; then
-    cp /etc/masque/masque.conf.template /etc/masque/
+    cp ./masque.conf.template /etc/masque/
     echo "Cannot find /etc/masque/masque.conf. Please create one from masque.conf.template."
 fi
 popd
