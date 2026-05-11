@@ -49,7 +49,7 @@ var packetPool = sync.Pool{
 }
 var tunTapDevice []*water.Interface
 var mu *sync.RWMutex
-var ipToTunChan map[string](chan *packet)
+var ipToTunChan map[netip.Addr](chan *packet)
 var wanAddr netip.Addr
 
 func main() {
@@ -363,7 +363,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 
 	p := connectip.Proxy{}
 	mux := http.NewServeMux()
-    ipToTunChan = make(map[string](chan *packet))
+    ipToTunChan = make(map[netip.Addr](chan *packet))
     mu = &sync.RWMutex{}
 	for i, dev := range tunTapDevice {
     	go func(d *water.Interface, id int) {
@@ -385,8 +385,9 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
                     continue
                 }
 				logger.Trace(fmt.Sprintf("queue#%d dest IP to filter %v",id, destIP.String()))
+				destIP = destIP.Unmap()
                 mu.RLock()
-                tunChan, ok := ipToTunChan[destIP.String()]
+                tunChan, ok := ipToTunChan[destIP]
                 mu.RUnlock()
 				if ok {
     				select {
@@ -475,11 +476,11 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
 		return fmt.Errorf("failed to assign addresses: %w", err)
 	}
     mu.Lock()
-    ipToTunChan[peerAddr] = tunChan
+    ipToTunChan[addr] = tunChan
     mu.Unlock()
 	defer func() {
     	mu.Lock()
-    	delete(ipToTunChan, peerAddr)
+    	delete(ipToTunChan, addr)
     	mu.Unlock()
 	}()
     clientResources, cerr := service.GetClientResources(setupCtx, clientId)

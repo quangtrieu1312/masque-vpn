@@ -266,7 +266,7 @@ func establishMASQUEConn(ctx context.Context, serverAddr netip.AddrPort, serverF
 		tlsConf,
 		&quic.Config{
 			EnableDatagrams:   true,
-			InitialPacketSize: 1500,
+			InitialPacketSize: 1350,
             KeepAlivePeriod: 5*time.Second,
 		},
 	)
