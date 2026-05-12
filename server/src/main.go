@@ -18,6 +18,7 @@ import (
 	"os/signal"
     "syscall"
     "runtime"
+	_ "net/http/pprof"
 
 	"golang.org/x/sys/unix"
 
@@ -448,6 +449,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 		EnableDatagrams: true,
 	}
 	upChan <- true
+	go http.ListenAndServe("localhost:6060", nil)
 	go s.ServeListener(ln)
 	defer s.Close()
 	<-ctx.Done()
