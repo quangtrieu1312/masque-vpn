@@ -5,6 +5,7 @@ cd $scriptFolder
 mkdir -p $scriptFolder/build
 rm -rf $scriptFolder/build/*
 cd src
+go clean -modcache && go mod tidy
 go build -o $scriptFolder/build/masque
 if [[ $? -ne 0 ]]; then
     echo "Build failed. Aborting."

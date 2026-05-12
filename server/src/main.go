@@ -353,6 +353,10 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 		&quic.Config{
             EnableDatagrams: true,
             MaxIdleTimeout: 30*time.Second,
+			InitialStreamReceiveWindow:     10 * 1024 * 1024,  // 10 MB
+    		MaxStreamReceiveWindow:         10 * 1024 * 1024,  // 10 MB
+    		InitialConnectionReceiveWindow: 15 * 1024 * 1024,  // 15 MB
+    		MaxConnectionReceiveWindow:     15 * 1024 * 1024,  // 15 MB
         },
 	)
 	if err != nil {

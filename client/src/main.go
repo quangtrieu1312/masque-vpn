@@ -268,6 +268,10 @@ func establishMASQUEConn(ctx context.Context, serverAddr netip.AddrPort, serverF
 			EnableDatagrams:   true,
 			InitialPacketSize: 1350,
             KeepAlivePeriod: 5*time.Second,
+			InitialStreamReceiveWindow:     10 * 1024 * 1024,  // 10 MB
+    		MaxStreamReceiveWindow:         10 * 1024 * 1024,  // 10 MB
+    		InitialConnectionReceiveWindow: 15 * 1024 * 1024,  // 15 MB
+    		MaxConnectionReceiveWindow:     15 * 1024 * 1024,  // 15 MB
 		},
 	)
 	if err != nil {
