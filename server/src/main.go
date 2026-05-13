@@ -385,10 +385,14 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
                 destIP, ok := netip.AddrFromSlice(pkt.buf[16:20])
                 if ! ok {
             		packetPool.Put(pkt) // return on error path too
-				    logger.Trace(fmt.Sprintf("queue#%d cannot parse data to IP. Dropping packet.", id))
+					if logger.ShouldLog(logger.TRACE) {
+				    	logger.Trace(fmt.Sprintf("queue#%d cannot parse data to IP. Dropping packet.", id))
+					}
                     continue
                 }
-				logger.Trace(fmt.Sprintf("queue#%d dest IP to filter %v",id, destIP.String()))
+				if logger.ShouldLog(logger.TRACE) {
+					logger.Trace(fmt.Sprintf("queue#%d dest IP to filter %v",id, destIP.String()))
+				}
 				destIP = destIP.Unmap()
                 mu.RLock()
                 tunChan, ok := ipToTunChan[destIP]
@@ -398,12 +402,16 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
     					case tunChan <- pkt:
     					default:
             				packetPool.Put(pkt) // return on error path too
-        					logger.Trace(fmt.Sprintf("queue#%d client %s channel full, dropping packet.", id, destIP.String()))
-    				}
+							if logger.ShouldLog(logger.TRACE) {
+        						logger.Trace(fmt.Sprintf("queue#%d client %s channel full, dropping packet.", id, destIP.String()))
+    						}
+					}
 				} else {
             		packetPool.Put(pkt) // return on error path too
-                    logger.Trace(fmt.Sprintf("queue#%d cannot find connection for client IP = %s. Dropping packet.", id, destIP.String()))
-                }
+					if logger.ShouldLog(logger.TRACE) {
+                    	logger.Trace(fmt.Sprintf("queue#%d cannot find connection for client IP = %s. Dropping packet.", id, destIP.String()))
+                	}
+				}
         	}
     	}(dev, i)
 	}
@@ -415,7 +423,9 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		logger.Debug(fmt.Sprintf("Handle new HTTP client %v", clientId))
+		if logger.ShouldLog(logger.DEBUG) {
+			logger.Debug(fmt.Sprintf("Handle new HTTP client %v", clientId))
+		}
         conCtx := context.WithValue(ctx, "clientId", clientId)
 		req, err := connectip.ParseRequest(r, template)
 		if err != nil {
@@ -460,7 +470,9 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Conn, ipProtocol uint8, fd int) error {
 	setupCtx, setupCancel := context.WithTimeout(*ctx, 5*time.Second)
 	defer setupCancel()
-    logger.Debug("Start connectip flow")
+	if logger.ShouldLog(logger.DEBUG) {
+    	logger.Debug("Start connectip flow")
+	}
     // Get the next unassigned address
     // And assign prefix = IP/32 to the client
     // Note:
@@ -507,29 +519,45 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
 
 	errChan := make(chan error, 2)
 	go func() {
-		b := make([]byte, 1500)
-		for {
-			n, err := conn.ReadPacket(b)
-			if err != nil {
-				if errors.Is(err, net.ErrClosed) {
-        			// fatal, connection is gone
-					logger.Error(fmt.Sprintf("failed to read from a closed connection: %v", err))
-					errChan <- err
-        			return
-    			} else {
-        			// also fatal since conn.ReadPacket() masks minor errors
-					// while silently dropping malformed packets
-					logger.Error(fmt.Sprintf("encoutered unexpected error while reading from connection: %v", err))
-        			errChan <- err
-        			return
-				}
-			}
-            logger.Trace(fmt.Sprintf("TUN -> WAN: read %d bytes, payload = %x", n, b[:n]))
-			if err := utility.SendOnSocket(fd, b[:n]); err != nil {
-				errChan <- fmt.Errorf("writing to server socket: %w", err)
-				return
-			}
-		}
+    	pktChan := make(chan []byte, 64)
+    	// reader goroutine
+    	go func() {
+        	b := make([]byte, 1500)
+        	for {
+            	n, err := conn.ReadPacket(b)
+            	if err != nil {
+                	close(pktChan)
+                	errChan <- err
+                	return
+            	}
+            	pkt := make([]byte, n)
+            	copy(pkt, b[:n])
+            	pktChan <- pkt
+        	}
+    	}()
+	
+    	batch := utility.NewSocketBatch(fd)
+    	ticker := time.NewTicker(500 * time.Microsecond)
+    	defer ticker.Stop()
+    	for {
+        	select {
+        	case pkt, ok := <-pktChan:
+            	if !ok {
+                	batch.Flush()
+                	return
+            	}
+            	batch.Add(pkt)
+            	if batch.Full() {
+                	if err := batch.Flush(); err != nil {
+                    	logger.Error(fmt.Sprintf("sendmmsg error: %v", err))
+                	}
+            	}
+        	case <-ticker.C:
+            	if err := batch.Flush(); err != nil {
+                	logger.Error(fmt.Sprintf("sendmmsg error: %v", err))
+            	}
+        	}
+    	}
 	}()
 
 	go func() {
@@ -542,7 +570,9 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
     			}
 				return
 			}
-            logger.Trace(fmt.Sprintf("WAN -> TUN: read %d bytes, payload = %x", pkt.n, pkt))
+			if logger.ShouldLog(logger.TRACE) {
+            	logger.Trace(fmt.Sprintf("WAN -> TUN: read %d bytes, payload = %x", pkt.n, pkt))
+			}
         	icmp, err := conn.WritePacket(pkt.buf[:pkt.n])
         	packetPool.Put(pkt) // return to pool immediately after use
 			if err != nil {

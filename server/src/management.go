@@ -26,7 +26,9 @@ func RunManagementService(ctx context.Context) {
         method := r.Method
         id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
         if err != nil {
-            logger.Trace(fmt.Sprintf("Invalid client id: %v", err))
+			if logger.ShouldLog(logger.TRACE) {
+            	logger.Trace(fmt.Sprintf("Invalid client id: %v", err))
+			}
             w.WriteHeader(http.StatusBadRequest)
             return
         }
@@ -34,7 +36,9 @@ func RunManagementService(ctx context.Context) {
         case http.MethodGet:
             data, err := service.GetClientByID(ctx, id)
             if err != nil {
-                logger.Debug(fmt.Sprintf("GET /client/%v error: %v", id, err))
+				if logger.ShouldLog(logger.DEBUG) {
+                	logger.Debug(fmt.Sprintf("GET /client/%v error: %v", id, err))
+				}
                 w.WriteHeader(http.StatusBadRequest)
             } else {
                 jsonBytes, err := json.Marshal(*data)
@@ -200,7 +204,9 @@ func RunManagementService(ctx context.Context) {
         method := r.Method
         id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
         if err != nil {
-            logger.Trace(fmt.Sprintf("Invalid role id: %v", err))
+			if logger.ShouldLog(logger.TRACE) {
+            	logger.Trace(fmt.Sprintf("Invalid role id: %v", err))
+			}
             w.WriteHeader(http.StatusBadRequest)
             return
         }
@@ -208,12 +214,16 @@ func RunManagementService(ctx context.Context) {
         case http.MethodGet:
             data, err := service.GetRoleByID(ctx, id)
             if err != nil {
-                logger.Debug(fmt.Sprintf("GET /role/%v error: %v", id, err))
+				if logger.ShouldLog(logger.DEBUG) {
+                	logger.Debug(fmt.Sprintf("GET /role/%v error: %v", id, err))
+				}
                 w.WriteHeader(http.StatusBadRequest)
             } else {
                 jsonBytes, err := json.Marshal(*data)
                 if err != nil {
-                    logger.Debug(fmt.Sprintf("Cannot marshal role data to json: %v", err))
+					if logger.ShouldLog(logger.DEBUG) {
+                    	logger.Debug(fmt.Sprintf("Cannot marshal role data to json: %v", err))
+					}
                     w.WriteHeader(http.StatusInternalServerError)
                 } else {
                     w.Write(jsonBytes)
@@ -224,7 +234,9 @@ func RunManagementService(ctx context.Context) {
             var body request.UpdateRoleName
             err := json.NewDecoder(r.Body).Decode(&body)
             if err != nil {
-                logger.Debug(fmt.Sprintf("Invalid POST /role/%v: %v", id, err))
+				if logger.ShouldLog(logger.DEBUG) {
+                	logger.Debug(fmt.Sprintf("Invalid POST /role/%v: %v", id, err))
+				}
                 w.WriteHeader(http.StatusBadRequest)
                 return
             }
@@ -232,7 +244,9 @@ func RunManagementService(ctx context.Context) {
             if ok {
                 w.WriteHeader(http.StatusOK)
             } else {
-                logger.Debug(fmt.Sprintf("Cannot update role name: %v", err))
+				if logger.ShouldLog(logger.DEBUG) {
+                	logger.Debug(fmt.Sprintf("Cannot update role name: %v", err))
+				}
                 w.WriteHeader(http.StatusBadRequest)
             }
             break
@@ -251,12 +265,16 @@ func RunManagementService(ctx context.Context) {
         case http.MethodGet:
             data, err := service.GetAllRoles(ctx)
             if err != nil {
-                logger.Debug(fmt.Sprintf("GET /role error: %v", err))
+				if logger.ShouldLog(logger.DEBUG) {
+                	logger.Debug(fmt.Sprintf("GET /role error: %v", err))
+				}
                 w.WriteHeader(http.StatusBadRequest)
             } else {
                 jsonBytes, err := json.Marshal(*data)
                 if err != nil {
-                    logger.Debug(fmt.Sprintf("Cannot marshal role data to json: %v", err))
+					if logger.ShouldLog(logger.DEBUG) {
+                    	logger.Debug(fmt.Sprintf("Cannot marshal role data to json: %v", err))
+					}
                     w.WriteHeader(http.StatusInternalServerError)
                 } else {
                     w.Write(jsonBytes)
@@ -270,7 +288,9 @@ func RunManagementService(ctx context.Context) {
                 var body request.UpsertRoles
                 err := json.NewDecoder(r.Body).Decode(&body)
                 if err != nil {
-                    logger.Debug(fmt.Sprintf("Invalid POST /role: %v", err))
+					if logger.ShouldLog(logger.DEBUG) {
+                    	logger.Debug(fmt.Sprintf("Invalid POST /role: %v", err))
+					}
                     w.WriteHeader(http.StatusBadRequest)
                     return
                 }
@@ -278,7 +298,9 @@ func RunManagementService(ctx context.Context) {
                 if err == nil {
                     w.WriteHeader(http.StatusOK)
                 } else {
-                	logger.Debug(fmt.Sprintf("Cannot upsert role: %v", err))
+					if logger.ShouldLog(logger.DEBUG) {
+                		logger.Debug(fmt.Sprintf("Cannot upsert role: %v", err))
+					}
                     w.WriteHeader(http.StatusBadRequest)
                 }
                 break
@@ -286,18 +308,24 @@ func RunManagementService(ctx context.Context) {
                 var body request.FetchClientRoles
                 err := json.NewDecoder(r.Body).Decode(&body)
                 if err != nil {
-                    logger.Debug(fmt.Sprintf("Invalid POST /role: %v", err))
+					if logger.ShouldLog(logger.DEBUG) {
+                    	logger.Debug(fmt.Sprintf("Invalid POST /role: %v", err))
+					}
                     w.WriteHeader(http.StatusBadRequest)
                     return
                 }
                 data, err := service.GetClientRoles(ctx, body.ClientID)
                 if err != nil {
-                    logger.Debug(fmt.Sprintf("POST /role error: %v", err))
+					if logger.ShouldLog(logger.DEBUG) {
+                    	logger.Debug(fmt.Sprintf("POST /role error: %v", err))
+					}
                     w.WriteHeader(http.StatusBadRequest)
                 } else {
                     jsonBytes, err := json.Marshal(*data)
                     if err != nil {
-                        logger.Debug(fmt.Sprintf("Cannot marshal role data to json: %v", err))
+						if logger.ShouldLog(logger.DEBUG) {
+                        	logger.Debug(fmt.Sprintf("Cannot marshal role data to json: %v", err))
+						}
                         w.WriteHeader(http.StatusInternalServerError)
                     } else {
                         w.Write(jsonBytes)
@@ -308,7 +336,9 @@ func RunManagementService(ctx context.Context) {
                 var body request.AssignResourcesToRoles
                 err := json.NewDecoder(r.Body).Decode(&body)
                 if err != nil {
-                    logger.Debug(fmt.Sprintf("Invalid POST /role: %v", err))
+					if logger.ShouldLog(logger.DEBUG) {
+                    	logger.Debug(fmt.Sprintf("Invalid POST /role: %v", err))
+					}
                     w.WriteHeader(http.StatusBadRequest)
                     return
                 }
@@ -316,7 +346,9 @@ func RunManagementService(ctx context.Context) {
                 if ok {
                     w.WriteHeader(http.StatusOK)
                 } else {
-                	logger.Debug(fmt.Sprintf("Cannot assign resource to role: %v", err))
+					if logger.ShouldLog(logger.DEBUG) {
+                		logger.Debug(fmt.Sprintf("Cannot assign resource to role: %v", err))
+					}
                     w.WriteHeader(http.StatusBadRequest)
                 }
                 break
@@ -324,7 +356,9 @@ func RunManagementService(ctx context.Context) {
                 var body request.UnassignResourcesToRoles
                 err := json.NewDecoder(r.Body).Decode(&body)
                 if err != nil {
-                    logger.Debug(fmt.Sprintf("Invalid POST /role: %v", err))
+					if logger.ShouldLog(logger.DEBUG) {
+                    	logger.Debug(fmt.Sprintf("Invalid POST /role: %v", err))
+					}
                     w.WriteHeader(http.StatusBadRequest)
                     return
                 }
@@ -332,7 +366,9 @@ func RunManagementService(ctx context.Context) {
                 if ok {
                     w.WriteHeader(http.StatusOK)
                 } else {
-                	logger.Debug(fmt.Sprintf("Cannot unassign resource to role: %v", err))
+					if logger.ShouldLog(logger.DEBUG) {
+                		logger.Debug(fmt.Sprintf("Cannot unassign resource to role: %v", err))
+					}
                     w.WriteHeader(http.StatusBadRequest)
                 }
                 break
@@ -344,7 +380,9 @@ func RunManagementService(ctx context.Context) {
             var body request.DeleteRoles
             err := json.NewDecoder(r.Body).Decode(&body)
             if err != nil {
-                logger.Debug(fmt.Sprintf("Invalid DELETE /role: %v", err))
+				if logger.ShouldLog(logger.DEBUG) {
+                	logger.Debug(fmt.Sprintf("Invalid DELETE /role: %v", err))
+				}
                 w.WriteHeader(http.StatusBadRequest)
                 return
             }
@@ -352,7 +390,9 @@ func RunManagementService(ctx context.Context) {
             if ok {
                 w.WriteHeader(http.StatusOK)
             } else {
-                logger.Debug(fmt.Sprintf("Cannot delete role: %v", err))
+				if logger.ShouldLog(logger.DEBUG) {
+                	logger.Debug(fmt.Sprintf("Cannot delete role: %v", err))
+				}
                 w.WriteHeader(http.StatusBadRequest)
             }
             break
@@ -364,7 +404,9 @@ func RunManagementService(ctx context.Context) {
         method := r.Method
         id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
         if err != nil {
-            logger.Trace(fmt.Sprintf("Invalid resource id: %v", err))
+			if logger.ShouldLog(logger.TRACE) {
+            	logger.Trace(fmt.Sprintf("Invalid resource id: %v", err))
+			}
             w.WriteHeader(http.StatusBadRequest)
             return
         }
@@ -372,12 +414,16 @@ func RunManagementService(ctx context.Context) {
         case http.MethodGet:
             data, err := service.GetResourceByID(ctx, id)
             if err != nil {
-                logger.Debug(fmt.Sprintf("GET /resource/%v error: %v", id, err))
+				if logger.ShouldLog(logger.DEBUG) {
+                	logger.Debug(fmt.Sprintf("GET /resource/%v error: %v", id, err))
+				}
                 w.WriteHeader(http.StatusBadRequest)
             } else {
                 jsonBytes, err := json.Marshal(*data)
                 if err != nil {
-                    logger.Debug(fmt.Sprintf("Cannot marshal resource data to json: %v", err))
+					if logger.ShouldLog(logger.DEBUG) {
+                    	logger.Debug(fmt.Sprintf("Cannot marshal resource data to json: %v", err))
+					}
                     w.WriteHeader(http.StatusInternalServerError)
                 } else {
                     w.Write(jsonBytes)
@@ -388,7 +434,9 @@ func RunManagementService(ctx context.Context) {
             var body request.UpdateResourceName
             err := json.NewDecoder(r.Body).Decode(&body)
             if err != nil {
-                logger.Debug(fmt.Sprintf("Invalid POST /client/%v: %v", id, err))
+				if logger.ShouldLog(logger.DEBUG) {
+                	logger.Debug(fmt.Sprintf("Invalid POST /client/%v: %v", id, err))
+				}
                 w.WriteHeader(http.StatusBadRequest)
                 return
             }
@@ -396,7 +444,9 @@ func RunManagementService(ctx context.Context) {
             if ok {
                 w.WriteHeader(http.StatusOK)
             } else {
-                logger.Debug(fmt.Sprintf("Cannot update resource name: %v", err))
+				if logger.ShouldLog(logger.DEBUG) {
+                	logger.Debug(fmt.Sprintf("Cannot update resource name: %v", err))
+				}
                 w.WriteHeader(http.StatusBadRequest)
             }
             break
@@ -415,12 +465,16 @@ func RunManagementService(ctx context.Context) {
         case http.MethodGet:
             data, err := service.GetAllResources(ctx)
             if err != nil {
-                logger.Debug(fmt.Sprintf("GET /resource error: %v", err))
+				if logger.ShouldLog(logger.DEBUG) {
+                	logger.Debug(fmt.Sprintf("GET /resource error: %v", err))
+				}
                 w.WriteHeader(http.StatusBadRequest)
             } else {
                 jsonBytes, err := json.Marshal(*data)
                 if err != nil {
-                    logger.Debug(fmt.Sprintf("Cannot marshal resource data to json: %v", err))
+					if logger.ShouldLog(logger.DEBUG) {
+                    	logger.Debug(fmt.Sprintf("Cannot marshal resource data to json: %v", err))
+					}
                     w.WriteHeader(http.StatusInternalServerError)
                 } else {
                     w.Write(jsonBytes)
@@ -434,7 +488,9 @@ func RunManagementService(ctx context.Context) {
                 var body request.UpsertResources
                 err := json.NewDecoder(r.Body).Decode(&body)
                 if err != nil {
-                    logger.Debug(fmt.Sprintf("Invalid POST /resource: %v", err))
+					if logger.ShouldLog(logger.DEBUG) {
+                    	logger.Debug(fmt.Sprintf("Invalid POST /resource: %v", err))
+					}
                     w.WriteHeader(http.StatusBadRequest)
                     return
                 }
@@ -442,7 +498,9 @@ func RunManagementService(ctx context.Context) {
                 if err == nil {
                     w.WriteHeader(http.StatusOK)
                 } else {
-                	logger.Debug(fmt.Sprintf("Cannot upsert resource: %v", err))
+					if logger.ShouldLog(logger.DEBUG) {
+                		logger.Debug(fmt.Sprintf("Cannot upsert resource: %v", err))
+					}
                     w.WriteHeader(http.StatusBadRequest)
                 }
                 break
@@ -450,18 +508,24 @@ func RunManagementService(ctx context.Context) {
                 var body request.FetchClientResources
                 err := json.NewDecoder(r.Body).Decode(&body)
                 if err != nil {
-                    logger.Debug(fmt.Sprintf("Invalid POST /resource: %v", err))
+					if logger.ShouldLog(logger.DEBUG) {
+                    	logger.Debug(fmt.Sprintf("Invalid POST /resource: %v", err))
+					}
                     w.WriteHeader(http.StatusBadRequest)
                     return
                 }
                 data, err := service.GetClientResources(ctx, body.ClientID)
                 if err != nil {
-                    logger.Debug(fmt.Sprintf("POST /resource error: %v", err))
+					if logger.ShouldLog(logger.DEBUG) {
+                    	logger.Debug(fmt.Sprintf("POST /resource error: %v", err))
+					}
                     w.WriteHeader(http.StatusBadRequest)
                 } else {
                     jsonBytes, err := json.Marshal(*data)
                     if err != nil {
-                        logger.Debug(fmt.Sprintf("Cannot marshal resource data to json: %v", err))
+						if logger.ShouldLog(logger.DEBUG) {
+                        	logger.Debug(fmt.Sprintf("Cannot marshal resource data to json: %v", err))
+						}
                         w.WriteHeader(http.StatusInternalServerError)
                     } else {
                         w.Write(jsonBytes)
@@ -476,7 +540,9 @@ func RunManagementService(ctx context.Context) {
             var body request.DeleteResources
             err := json.NewDecoder(r.Body).Decode(&body)
             if err != nil {
-                logger.Debug(fmt.Sprintf("Invalid DELETE /resource: %v", err))
+				if logger.ShouldLog(logger.DEBUG) {
+                	logger.Debug(fmt.Sprintf("Invalid DELETE /resource: %v", err))
+				}
                 w.WriteHeader(http.StatusBadRequest)
                 return
             }
@@ -484,7 +550,9 @@ func RunManagementService(ctx context.Context) {
             if ok {
                 w.WriteHeader(http.StatusOK)
             } else {
-                logger.Debug(fmt.Sprintf("Cannot delete resource: %v", err))
+				if logger.ShouldLog(logger.DEBUG) {
+                	logger.Debug(fmt.Sprintf("Cannot delete resource: %v", err))
+				}
                 w.WriteHeader(http.StatusBadRequest)
             }
             break
@@ -498,12 +566,16 @@ func RunManagementService(ctx context.Context) {
         case http.MethodGet:
             data, err := service.GetAllAvailableIPRanges(ctx)
             if err != nil {
-                logger.Debug(fmt.Sprintf("GET /dhcp error: %v", err))
+				if logger.ShouldLog(logger.DEBUG) {
+                	logger.Debug(fmt.Sprintf("GET /dhcp error: %v", err))
+				}
                 w.WriteHeader(http.StatusBadRequest)
             } else {
                 jsonBytes, err := json.Marshal(*data)
                 if err != nil {
-                    logger.Debug(fmt.Sprintf("Cannot marshal dhcp data to json: %v", err))
+					if logger.ShouldLog(logger.DEBUG) {
+                    	logger.Debug(fmt.Sprintf("Cannot marshal dhcp data to json: %v", err))
+					}
                     w.WriteHeader(http.StatusInternalServerError)
                 } else {
                     w.Write(jsonBytes)
@@ -514,7 +586,9 @@ func RunManagementService(ctx context.Context) {
             var body request.ResetDHCP
             err := json.NewDecoder(r.Body).Decode(&body)
             if err != nil {
-                logger.Debug(fmt.Sprintf("Invalid POST /dhcp: %v", err))
+				if logger.ShouldLog(logger.DEBUG) {
+                	logger.Debug(fmt.Sprintf("Invalid POST /dhcp: %v", err))
+				}
                 w.WriteHeader(http.StatusBadRequest)
                 return
             }
@@ -522,7 +596,9 @@ func RunManagementService(ctx context.Context) {
             if ok {
                 w.WriteHeader(http.StatusOK)
             } else {
-                logger.Debug(fmt.Sprintf("Cannot reset DHCP: %v", err))
+				if logger.ShouldLog(logger.DEBUG) {
+                	logger.Debug(fmt.Sprintf("Cannot reset DHCP: %v", err))
+				}
                 w.WriteHeader(http.StatusBadRequest)
             }
             break

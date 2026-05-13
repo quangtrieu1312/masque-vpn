@@ -11,7 +11,7 @@ require (
 	github.com/vishvananda/netlink v1.3.0
 	github.com/yosida95/uritemplate/v3 v3.0.2
 	golang.org/x/net v0.48.0
-	golang.org/x/sys v0.40.0
+	golang.org/x/sys v0.44.0
 )
 
 replace github.com/quic-go/connect-ip-go => github.com/quangtrieu1312/connect-ip-go v0.1.0

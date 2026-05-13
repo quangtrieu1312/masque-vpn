@@ -87,6 +87,10 @@ func (level LogLevel) string() string {
     return levelName[level]
 }
 
+func ShouldLog(level LogLevel) bool {
+	return loggerInstance.level >= level
+}
+
 func Fatal(msg string) {
     if loggerInstance.level >= FATAL {
         log.Printf("[%v]: %v", FATAL.string(), msg)
