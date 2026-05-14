@@ -13,7 +13,7 @@ require (
 
 replace github.com/quic-go/connect-ip-go => ../../lib/connect-ip-go
 
-replace github.com/quic-go/quic-go => ../../quic-go
+replace github.com/quic-go/quic-go => ../../lib/quic-go
 
 require (
 	github.com/dunglas/httpsfv v1.0.2 // indirect
