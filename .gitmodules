@@ -7,3 +7,6 @@
 [submodule "lib/connect-ip-go"]
 	path = lib/connect-ip-go
 	url = git@github.com:quangtrieu1312/connect-ip-go
+[submodule "lib/lockfree_mpmc_queue"]
+	path = lib/lockfree_mpmc_queue
+	url = git@github.com:quangtrieu1312/lockfree_mpmc_queue

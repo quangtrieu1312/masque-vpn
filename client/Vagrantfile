@@ -20,7 +20,7 @@ Vagrant.configure("2") do |config|
         libvirt.volume_cache = "writeback"
       end
 
-      node.vm.synced_folder ".", "/vagrant", type: "nfs",
+      node.vm.synced_folder "..", "/vagrant", type: "nfs",
         nfs_udp: false,
         nfs_version: 4,
         mount_options: ["rw", "vers=4", "tcp", "nolock"]
