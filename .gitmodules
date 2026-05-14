@@ -1,3 +1,9 @@
 [submodule "vendor/quiche"]
 	path = vendor/quiche
 	url = git@github.com:quangtrieu1312/quiche
+[submodule "lib/quic-go"]
+	path = lib/quic-go
+	url = git@github.com:quangtrieu1312/quic-go
+[submodule "lib/connect-ip-go"]
+	path = lib/connect-ip-go
+	url = git@github.com:quangtrieu1312/connect-ip-go

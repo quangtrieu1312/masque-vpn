@@ -11,9 +11,9 @@ require (
 	golang.org/x/sys v0.35.0
 )
 
-replace github.com/quic-go/connect-ip-go => github.com/quangtrieu1312/connect-ip-go v0.1.0
+replace github.com/quic-go/connect-ip-go => ../../lib/connect-ip-go
 
-replace github.com/quic-go/quic-go => github.com/quangtrieu1312/quic-go v0.59.0
+replace github.com/quic-go/quic-go => ../../quic-go
 
 require (
 	github.com/dunglas/httpsfv v1.0.2 // indirect
