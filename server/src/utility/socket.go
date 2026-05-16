@@ -7,6 +7,7 @@ import (
     "fmt"
     "unsafe"
 	"syscall"
+	"runtime"
 	"sync/atomic"
 
     "golang.org/x/net/ipv4"
@@ -97,6 +98,13 @@ func (b *SocketBatch) Flush() error {
 	if b.count == 0 {
         return nil
     }
+	var p runtime.Pinner
+    for i := 0; i < b.count; i++ {
+        p.Pin(&b.addrs4[i])
+        p.Pin(&b.iovs[i])
+        p.Pin(&b.bufs[i][0])
+    }
+    defer p.Unpin()
     _, _, errno := syscall.Syscall6(
         unix.SYS_SENDMMSG,
         uintptr(b.fd),
