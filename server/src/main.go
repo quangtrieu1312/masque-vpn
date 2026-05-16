@@ -522,8 +522,8 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
 	}
 
 	errChan := make(chan error, 2)
+	pktChan := make(chan *packet, 64)
 	go func() {
-    	pktChan := make(chan []byte, 64)
     	// reader goroutine
     	go func() {
         	b := make([]byte, 1500)
@@ -534,9 +534,10 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
                 	errChan <- err
                 	return
             	}
-            	pkt := make([]byte, n)
-            	copy(pkt, b[:n])
-            	pktChan <- pkt
+				p := packetPool.Get().(*packet)
+        		p.n = n
+        		copy(p.buf[:n], b[:n])
+        		pktChan <- p
         	}
     	}()
 	
@@ -550,10 +551,12 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
                 	batch.Flush()
                 	return
             	}
-            	batch.Add(pkt)
+				batch.Add(pkt.buf[:pkt.n])
+				packetPool.Put(pkt)
 				for len(pktChan) > 0 && !batch.Full() {
                 	pkt = <-pktChan
-                	batch.Add(pkt)
+					batch.Add(pkt.buf[:pkt.n])
+					packetPool.Put(pkt)
             	}
             	if batch.Full() {
                 	if err := batch.Flush(); err != nil {
@@ -583,35 +586,26 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
 			if logger.ShouldLog(logger.TRACE) {
             	logger.Trace(fmt.Sprintf("WAN -> TUN: read %d bytes, payload = %x", pkt.n, pkt))
 			}
-			done := make(chan struct{})
-			go func() {
-            	defer close(done)
-            	icmp, err := conn.WritePacket(pkt.buf[:pkt.n])
-            	// handle icmp/err as before
-				if err != nil {
-					if errors.Is(err, net.ErrClosed) {
-        				// fatal, connection is gone
-						logger.Error(fmt.Sprintf("failed to write to a closed connection: %w", err))
-						errChan <- err
-        				return
-    				}
-					// maybe the packet queue is just full
-					// as a VPN server we drop packet
-					// and transportation layer (L4) can retry
-					logger.Error(fmt.Sprintf("failed to write to connection, drop packet: %w", err))
-				}
-				if len(icmp) > 0 {
-					if err := utility.SendOnSocket(fd, icmp); err != nil {
-						logger.Error(fmt.Sprintf("failed to send ICMP packet: %v", err))
-					}
-				}
-        	}()
-			timer.Reset(5 * time.Millisecond)
-        	select {
-        		case <-done:
-            		packetPool.Put(pkt)
-        		case <-timer.C:
-            		packetPool.Put(pkt) // timed out, drop packet
+			// WritePacket → SendDatagram → datagramQueue.Add is non-blocking.
+        	// No goroutine needed.
+        	icmp, err := conn.WritePacket(pkt.buf[:pkt.n])
+        	packetPool.Put(pkt)
+	
+        	if err != nil {
+            	if errors.Is(err, net.ErrClosed) {
+                	select {
+                		case errChan <- err:
+                		default:
+                	}
+                	return
+            	}
+            	// datagram queue full — drop, L4 will retry
+            	continue
+        	}
+        	if len(icmp) > 0 {
+            	if err := utility.SendOnSocket(fd, icmp); err != nil {
+                	logger.Error(fmt.Sprintf("failed to send ICMP: %v", err))
+            	}
         	}
 		}
 	}()
