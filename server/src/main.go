@@ -581,25 +581,35 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
 			if logger.ShouldLog(logger.TRACE) {
             	logger.Trace(fmt.Sprintf("WAN -> TUN: read %d bytes, payload = %x", pkt.n, pkt))
 			}
-        	icmp, err := conn.WritePacket(pkt.buf[:pkt.n])
-        	packetPool.Put(pkt) // return to pool immediately after use
-			if err != nil {
-				if errors.Is(err, net.ErrClosed) {
-        			// fatal, connection is gone
-					logger.Error(fmt.Sprintf("failed to write to a closed connection: %w", err))
-					errChan <- err
-        			return
-    			}
-				// maybe the packet queue is just full
-				// as a VPN server we drop packet
-				// and transportation layer (L4) can retry
-				logger.Error(fmt.Sprintf("failed to write to connection, drop packet: %w", err))
-			}
-			if len(icmp) > 0 {
-				if err := utility.SendOnSocket(fd, icmp); err != nil {
-					logger.Error(fmt.Sprintf("failed to send ICMP packet: %v", err))
+			done := make(chan struct{})
+			go func() {
+            	defer close(done)
+            	icmp, err := conn.WritePacket(pkt.buf[:pkt.n])
+            	// handle icmp/err as before
+				if err != nil {
+					if errors.Is(err, net.ErrClosed) {
+        				// fatal, connection is gone
+						logger.Error(fmt.Sprintf("failed to write to a closed connection: %w", err))
+						errChan <- err
+        				return
+    				}
+					// maybe the packet queue is just full
+					// as a VPN server we drop packet
+					// and transportation layer (L4) can retry
+					logger.Error(fmt.Sprintf("failed to write to connection, drop packet: %w", err))
 				}
-			}
+				if len(icmp) > 0 {
+					if err := utility.SendOnSocket(fd, icmp); err != nil {
+						logger.Error(fmt.Sprintf("failed to send ICMP packet: %v", err))
+					}
+				}
+        	}()
+        	select {
+        		case <-done:
+            		packetPool.Put(pkt)
+        		case <-time.After(5 * time.Millisecond):
+            		packetPool.Put(pkt) // timed out, drop packet
+        	}
 		}
 	}()
 
