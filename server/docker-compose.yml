@@ -12,7 +12,6 @@ services:
       net.core.wmem_max: 134217728
       net.core.rmem_default: 33554432
       net.core.wmem_default: 33554432
-      net.core.netdev_max_backlog: 5000
     devices:
       - /dev/net/tun:/dev/net/tun
     ports:
