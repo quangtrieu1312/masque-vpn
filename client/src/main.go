@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"os/signal"
 	"runtime"
+	_ "net/http/pprof"
 	
 	connectip "github.com/quic-go/connect-ip-go"
 
@@ -34,8 +35,8 @@ import (
 	"github.com/quangtrieu1312/masque-vpn/client/utility"
 )
 
-func PreUp(ctx *context.Context) {
-    logger.LogInfo("Exec pre up")
+func Bootstrap(ctx *context.Context) {
+    logger.LogInfo("Exec bootstrap")
     cmd := exec.Command("/sbin/ip", "rule", "add", "not", "fwmark", (*ctx).Value("FWMARK").(string), "table", "9000")
     logger.LogInfo(fmt.Sprintf("Running command: /sbin/ip"))
     _, err := cmd.Output()
@@ -44,11 +45,12 @@ func PreUp(ctx *context.Context) {
     }
 }
 
-func PostUp() {
+func RunPostUp() {
     logger.LogInfo("Exec post up")
+	go http.ListenAndServe("localhost:6060", nil)
 }
 
-func PostDown() {
+func GracefullyShutdown() {
     logger.LogInfo("Exec post down")
     cmd := exec.Command("/sbin/ip", "rule", "del", "table", "9000")
     logger.LogInfo(fmt.Sprintf("Running command: /sbin/ip"))
@@ -75,7 +77,7 @@ func main() {
         syscall.SIGQUIT)
 	go func() {
     	<-sigChan
-    	PostDown()
+    	GracefullyShutdown()
     	cancel()
 	}()
     config.Load(&ctx)
@@ -137,10 +139,10 @@ func main() {
             case isRunning := <- isRunningChan:
                 if (isRunning) {
                     logger.LogInfo("Masque is up")
-                    PostUp()
+                    RunPostUp()
                 } else {
                     logger.LogInfo("Masque is down")
-                    PostDown()
+                    GracefullyShutdown()
                     cancel()
                 	return
                 }
@@ -358,7 +360,7 @@ func establishTunTapAndRoutes(ctx context.Context, routes []connectip.IPRoute, l
             }
 		}
 	}
-    PreUp(&ctx)
+    Bootstrap(&ctx)
     return devs, nil
 }
 
