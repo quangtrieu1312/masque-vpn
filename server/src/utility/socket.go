@@ -22,12 +22,13 @@ type mmsghdr struct {
 }
 
 type SocketBatch struct {
-	fd     int
-	msgs   []mmsghdr
-	iovs   []unix.Iovec
-	addrs4 []unix.RawSockaddrInet4
-	addrs6 []unix.RawSockaddrInet6
-	count  int
+    fd     int
+    msgs   []mmsghdr
+    iovs   []unix.Iovec
+    addrs4 []unix.RawSockaddrInet4
+    addrs6 []unix.RawSockaddrInet6
+    bufs   [MaxBatchSize][1500]byte
+    count  int
 }
 
 func IPVersion(b []byte) uint8 {
@@ -46,6 +47,8 @@ func NewSocketBatch(fd int) *SocketBatch {
 }
 
 func (b *SocketBatch) Add(pkt []byte) error {
+	i := b.count
+    n := copy(b.bufs[i][:], pkt)
     switch v := IPVersion(pkt); v {
     case 4:
         if len(pkt) < ipv4.HeaderLen {
@@ -56,8 +59,8 @@ func (b *SocketBatch) Add(pkt []byte) error {
             Family: unix.AF_INET,
             Addr:   ([4]byte)(pkt[16:20]),
         }
-        b.iovs[i] = unix.Iovec{Base: &pkt[0]}
-        b.iovs[i].SetLen(len(pkt))
+        b.iovs[i] = unix.Iovec{Base: &b.bufs[i][0]}
+        b.iovs[i].SetLen(n)
         b.msgs[i].Hdr.Name = (*byte)(unsafe.Pointer(&b.addrs4[i]))
         b.msgs[i].Hdr.Namelen = unix.SizeofSockaddrInet4
         b.msgs[i].Hdr.Iov = &b.iovs[i]
