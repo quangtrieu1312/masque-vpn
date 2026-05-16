@@ -541,7 +541,7 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
     	}()
 	
     	batch := utility.NewSocketBatch(fd)
-    	ticker := time.NewTicker(100 * time.Millisecond)
+    	ticker := time.NewTicker(1 * time.Millisecond)
     	defer ticker.Stop()
     	for {
         	select {
@@ -568,6 +568,8 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
     	}
 	}()
 
+	timer := time.NewTimer(5 * time.Millisecond)
+	defer timer.Stop()
 	go func() {
 		for {
             pkt, ok := <-tunChan
@@ -604,10 +606,11 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
 					}
 				}
         	}()
+			timer.Reset(5 * time.Millisecond)
         	select {
         		case <-done:
             		packetPool.Put(pkt)
-        		case <-time.After(5 * time.Millisecond):
+        		case <-timer.C:
             		packetPool.Put(pkt) // timed out, drop packet
         	}
 		}
