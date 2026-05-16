@@ -547,6 +547,10 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
                 	return
             	}
             	batch.Add(pkt)
+				for len(pktChan) > 0 && !batch.Full() {
+                	pkt = <-pktChan
+                	batch.Add(pkt)
+            	}
             	if batch.Full() {
                 	if err := batch.Flush(); err != nil {
                     	logger.Error(fmt.Sprintf("sendmmsg error: %v", err))
