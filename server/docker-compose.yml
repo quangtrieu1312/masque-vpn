@@ -7,11 +7,6 @@ services:
     privileged: true
     environment:
       - GOTRACEBACK=all
-    sysctls:
-      net.core.rmem_max: 134217728
-      net.core.wmem_max: 134217728
-      net.core.rmem_default: 33554432
-      net.core.wmem_default: 33554432
     devices:
       - /dev/net/tun:/dev/net/tun
     ports:
