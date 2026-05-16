@@ -13,7 +13,7 @@ import (
     "golang.org/x/sys/unix"
 )
 
-const MaxBatchSize = 32
+const MaxBatchSize = 1024
 
 type mmsghdr struct {
 	Hdr unix.Msghdr
