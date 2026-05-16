@@ -523,7 +523,7 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
 
 	errChan := make(chan error, 2)
 	go func() {
-    	pktChan := make(chan []byte, 64)
+    	pktChan := make(chan []byte, 4096)
     	// reader goroutine
     	go func() {
         	b := make([]byte, 1500)
@@ -541,7 +541,7 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
     	}()
 	
     	batch := utility.NewSocketBatch(fd)
-    	ticker := time.NewTicker(500 * time.Microsecond)
+    	ticker := time.NewTicker(100 * time.Millisecond)
     	defer ticker.Stop()
     	for {
         	select {
