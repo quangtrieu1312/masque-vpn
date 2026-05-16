@@ -5,6 +5,8 @@ services:
       - NET_ADMIN
       - NET_RAW
     privileged: true
+    environment:
+      - GOTRACEBACK=all
     devices:
       - /dev/net/tun:/dev/net/tun
     ports:
