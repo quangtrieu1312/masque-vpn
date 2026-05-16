@@ -5,6 +5,7 @@ cd $scriptFolder
 mkdir -p $scriptFolder/build
 rm -rf $scriptFolder/build/*
 cd src
+go clean -modcache && go mod tidy
 if [ "$(uname -m)" = "x86_64" ]; then
     export CGO_CXXFLAGS="-std=c++17 -mcx16"
 else
