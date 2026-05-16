@@ -168,6 +168,14 @@ func RunPostUp(ctx context.Context) {
         logger.Fatal(fmt.Sprintf("Cannot run postup scripts: %v", err))
     }
     RunManagementService(ctx)
+	go http.ListenAndServe("localhost:6060", nil)
+	go func() {
+    	t := time.NewTicker(5 * time.Second)
+    	for range t.C {
+        	f, p, avg := utility.BatchStats()
+        	logger.Info(fmt.Sprintf("sendmmsg stats: flushes=%d packets=%d avg_batch=%.2f", f, p, avg))
+    	}
+	}()
 }
 
 func RunPreDown() {
@@ -459,7 +467,6 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 		EnableDatagrams: true,
 	}
 	upChan <- true
-	go http.ListenAndServe("localhost:6060", nil)
 	go s.ServeListener(ln)
 	defer s.Close()
 	<-ctx.Done()
@@ -495,11 +502,6 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
     mu.Lock()
     ipToTunChan[addr] = tunChan
     mu.Unlock()
-	defer func() {
-    	mu.Lock()
-    	delete(ipToTunChan, addr)
-    	mu.Unlock()
-	}()
     clientResources, cerr := service.GetClientResources(setupCtx, clientId)
     if cerr != nil {
         return cerr
@@ -601,6 +603,9 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
 
 	err := <-errChan
 	logger.Error(fmt.Sprintf("error proxying: %v", err))
+    mu.Lock()
+    delete(ipToTunChan, addr)
+    mu.Unlock()
 	close(tunChan)
 	for pkt := range tunChan {
 		packetPool.Put(pkt)

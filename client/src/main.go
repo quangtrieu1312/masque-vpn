@@ -337,6 +337,7 @@ func establishTunTapAndRoutes(ctx context.Context, routes []connectip.IPRoute, l
 
     // link setup only needs to happen once, on devs[0]
     link, err := netlink.LinkByName(devName)
+    netlink.LinkSetMTU(link, 1252)
     if err != nil {
         return nil, fmt.Errorf("failed to get TUN interface: %w", err)
     }

@@ -7,6 +7,7 @@ import (
     "fmt"
     "unsafe"
 	"syscall"
+	"sync/atomic"
 
     "golang.org/x/net/ipv4"
     "golang.org/x/net/ipv6"
@@ -14,6 +15,9 @@ import (
 )
 
 const MaxBatchSize = 1024
+
+var totalFlushes atomic.Int64
+var totalPackets atomic.Int64
 
 type mmsghdr struct {
 	Hdr unix.Msghdr
@@ -102,6 +106,8 @@ func (b *SocketBatch) Flush() error {
         0, 0,
     )
     b.count = 0
+	totalFlushes.Add(1)
+	totalPackets.Add(int64(b.count))
     if errno != 0 {
         return errno
     }
@@ -120,4 +126,13 @@ func SendOnSocket(fd int, pkt []byte) error {
         return err
     }
     return b.Flush()
+}
+
+func BatchStats() (flushes, packets int64, avg float64) {
+    f := totalFlushes.Load()
+    p := totalPackets.Load()
+    if f == 0 {
+        return f, p, 0
+    }
+    return f, p, float64(p) / float64(f)
 }
