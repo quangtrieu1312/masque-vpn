@@ -105,9 +105,9 @@ func (b *SocketBatch) Flush() error {
         uintptr(unix.MSG_DONTWAIT),
         0, 0,
     )
-    b.count = 0
 	totalFlushes.Add(1)
 	totalPackets.Add(int64(b.count))
+    b.count = 0
     if errno != 0 {
         return errno
     }
