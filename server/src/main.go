@@ -541,7 +541,7 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
     	}()
 	
     	batch := utility.NewSocketBatch(fd)
-    	ticker := time.NewTicker(1 * time.Millisecond)
+    	ticker := time.NewTicker(5 * time.Millisecond)
     	defer ticker.Stop()
     	for {
         	select {

@@ -27,4 +27,11 @@ log "info" "Running masque daemon"
 chmod +x $BASE/bin
 setcap cap_net_admin+ep $BASE/bin
 ln -s $BASE/bin /usr/sbin/masqued
+
+sysctl -w net.core.rmem_max=134217728
+sysctl -w net.core.wmem_max=134217728
+sysctl -w net.core.rmem_default=33554432
+sysctl -w net.core.wmem_default=33554432
+sysctl -w net.core.netdev_max_backlog=5000
+
 GODEBUG=cgocheck=0 masqued
