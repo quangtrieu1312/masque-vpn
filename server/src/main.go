@@ -167,7 +167,9 @@ func RunPostUp(ctx context.Context) {
     if err != nil {
         logger.Fatal(fmt.Sprintf("Cannot run postup scripts: %v", err))
     }
-    RunManagementService(ctx)
+	go func(contxt context.Context) {
+    	RunManagementService(contxt)
+	}(ctx)
 	go http.ListenAndServe("localhost:6060", nil)
 	go func() {
     	t := time.NewTicker(5 * time.Second)
