@@ -523,7 +523,7 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
 
 	errChan := make(chan error, 2)
 	go func() {
-    	pktChan := make(chan []byte, 4096)
+    	pktChan := make(chan []byte, 64)
     	// reader goroutine
     	go func() {
         	b := make([]byte, 1500)
