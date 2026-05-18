@@ -7,6 +7,7 @@ services:
     privileged: true
     environment:
       - GOTRACEBACK=all
+      - GODEBUG=cgocheck=0
     devices:
       - /dev/net/tun:/dev/net/tun
     ports:

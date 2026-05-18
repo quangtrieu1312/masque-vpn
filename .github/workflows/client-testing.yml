@@ -60,10 +60,12 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CC: musl-gcc
         run: |
-          pushd .
-          cd vendor/quiche && cargo build --release --features ffi
-          popd
           cd client/src
+          if [ "$(uname -m)" = "x86_64" ]; then
+            export CGO_CXXFLAGS="-std=c++17 -mcx16"
+          else
+            export CGO_CXXFLAGS="-std=c++17"
+          fi
           go build \
             -buildvcs=false \
             -ldflags="-s -w -X main.version=${{ steps.meta.outputs.pkgver }}" \

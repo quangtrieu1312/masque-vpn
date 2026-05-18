@@ -3,6 +3,7 @@ module github.com/quangtrieu1312/masque-vpn/server
 go 1.25.0
 
 require (
+	github.com/cilium/ebpf v0.21.0
 	github.com/mattn/go-sqlite3 v1.14.33
 	github.com/praserx/ipconv v1.2.2
 	github.com/quic-go/connect-ip-go v0.1.0

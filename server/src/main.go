@@ -30,6 +30,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"github.com/yosida95/uritemplate/v3"
 
+	xdp "github.com/quangtrieu1312/masque-vpn/server/xdp"
     "github.com/quangtrieu1312/masque-vpn/server/constants"
     "github.com/quangtrieu1312/masque-vpn/server/utility"
     "github.com/quangtrieu1312/masque-vpn/server/db"
@@ -299,40 +300,23 @@ func createSendSocketIPv6(addr netip.Addr) (int, error) {
 func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProtocol uint8) error {
     ctx, cancel := context.WithCancel(ctxt)
     defer cancel()
-	mark := 9484
-	lc := net.ListenConfig{
-		Control: func(network, addr string, c syscall.RawConn) error {
-			var soErr error
-			err := c.Control(func(fd uintptr) {
-				soErr = unix.SetsockoptInt(
-					int(fd),
-					unix.SOL_SOCKET, // level  : socket layer
-					unix.SO_MARK,    // optname: SO_MARK
-					mark,            // optval : 9484
-				)
-			})
-			if err != nil {
-				return fmt.Errorf("RawConn.Control: %w", err)
-			}
-			if soErr != nil {
-				return fmt.Errorf("setsockopt(SOL_SOCKET, SO_MARK, %d): %w"+
-					" — process needs CAP_NET_ADMIN", mark, soErr)
-			}
-			return nil
-		},
-	}
-	pc, err := lc.ListenPacket(context.Background(), "udp", fmt.Sprintf("%v:%d",bindTo.Addr().String(), bindTo.Port()))
+	ifaceName := ctxt.Value("WAN_INTERFACE").(string)
+	xdpLoader, err := xdp.Load(ifaceName)
 	if err != nil {
-		return fmt.Errorf("Failed to listen on UDP: %w", err)
+		return fmt.Errorf("loading XDP program: %w", err)
 	}
-	defer pc.Close()
- 
-	udpConn, ok := pc.(*net.UDPConn)
-	if !ok {
-		return fmt.Errorf("expected *net.UDPConn, got %T", pc)
-	}
-	defer udpConn.Close()
+	defer xdpLoader.Close()
 
+	iface, err := net.InterfaceByName(ifaceName)
+	if err != nil {
+		return fmt.Errorf("interface %s: %w", ifaceName, err)
+	}
+	localAddr := &net.UDPAddr{IP: bindTo.Addr().AsSlice(), Port: int(bindTo.Port())}
+	afxdpConn, err := xdp.NewConn(iface, xdpLoader.XskMap(), localAddr, runtime.NumCPU())
+	if err != nil {
+		return fmt.Errorf("creating AF_XDP conn: %w", err)
+	}
+	defer afxdpConn.Close()
 	cert, err := tls.LoadX509KeyPair(constants.SERVER_CERT_PATH, constants.SERVER_KEY_PATH)
 	if err != nil {
 		return fmt.Errorf("Failed to load TLS certificate: %w", err)
@@ -345,7 +329,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
     if err != nil {
         return fmt.Errorf("Cannot read client CA:", err)
 	}
-    ok = certPool.AppendCertsFromPEM(caCertPEM)
+	ok := certPool.AppendCertsFromPEM(caCertPEM)
     if !ok {
 		return fmt.Errorf("Invalid cert")
 	}
@@ -356,7 +340,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 	    ClientCAs:             certPool,
 	}
     ln, err := quic.ListenEarly(
-		udpConn,
+		afxdpConn,
 		http3.ConfigureTLSConfig(serverConf),
 		&quic.Config{
             EnableDatagrams: true,

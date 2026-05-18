@@ -9,4 +9,5 @@ else
     export CGO_CXXFLAGS="-std=c++17"
 fi
 go build -o $scriptDir/build/bin
+chmod +x $scriptDir/build/bin
 popd >/dev/null 2>&1
