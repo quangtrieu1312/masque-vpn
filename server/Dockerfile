@@ -4,6 +4,7 @@ WORKDIR /server
 RUN apt-get update && apt upgrade -y
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y \
     golang clang llvm libelf-dev libbpf-dev linux-headers-generic
+RUN ln -sf /usr/include/$(uname -m)-linux-gnu/asm /usr/include/asm
 COPY src /server/src
 COPY build.sh /server/build.sh
 RUN cd /server/src/xdp && go generate ./...
