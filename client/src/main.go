@@ -154,10 +154,10 @@ func main() {
 		connID := fmt.Sprintf("conn#%d", 6-errorThreshold)
         logger.LogDebug(fmt.Sprintf("Retry threshold = %d", errorThreshold))
         for {
-            logger.LogTrace(fmt.Sprintf("Number of retry attempts left = %d", errorThreshold))
-            if errorThreshold < 0 {
+            if errorThreshold <= 0 {
                 errChan <- fmt.Errorf("Out of attempts")
             }
+            logger.LogTrace(fmt.Sprintf("Number of retry attempts left = %d", errorThreshold))
 	        routes, localPrefixes, ipconn, err := establishMASQUEConn(ctx, serverAddr, serverHost, enableKeyLog, keyLogPath)
 	        if err != nil {
                 logger.LogError(fmt.Sprintf("Failed to establish MASQUE connection: %v", err))

@@ -295,9 +295,6 @@ func createSendSocketIPv6(addr netip.Addr) (int, error) {
 	return fd, nil
 }
 
-func htons(host uint16) uint16 {
-	return (host<<8)&0xff00 | (host>>8)&0xff
-}
 
 func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProtocol uint8) error {
     ctx, cancel := context.WithCancel(ctxt)
@@ -368,6 +365,8 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
     		MaxStreamReceiveWindow:         10 * 1024 * 1024,  // 10 MB
     		InitialConnectionReceiveWindow: 15 * 1024 * 1024,  // 15 MB
     		MaxConnectionReceiveWindow:     15 * 1024 * 1024,  // 15 MB
+			DisablePathMTUDiscovery: true,
+			MaxIncomingStreams: 0,
         },
 	)
 	if err != nil {
@@ -458,7 +457,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 			logger.Fatal(fmt.Sprintf("failed to create send socket: %v", err))
 		}
 
-		if err := handleConn(&conCtx, make(chan *packet, 256), conn, ipProtocol, fdSnd); err != nil {
+		if err := handleConn(conCtx, make(chan *packet, 256), conn, ipProtocol, fdSnd); err != nil {
 			logger.Error(fmt.Sprintf("failed to handle connection: %v", err))
 			return
 		}
@@ -476,8 +475,8 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 	return nil
 }
 
-func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Conn, ipProtocol uint8, fd int) error {
-	setupCtx, setupCancel := context.WithTimeout(*ctx, 5*time.Second)
+func handleConn(ctx context.Context, tunChan chan *packet,  conn *connectip.Conn, ipProtocol uint8, fd int) error {
+	setupCtx, setupCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer setupCancel()
 	if logger.ShouldLog(logger.DEBUG) {
     	logger.Debug("Start connectip flow")
@@ -487,7 +486,7 @@ func handleConn(ctx *context.Context, tunChan chan *packet,  conn *connectip.Con
     // Note:
     // We can assign any subnet size here but I'm using /32 for simplicity
     // I may want to go back to this hardcoded number when I see issues for site-to-side VPN
-    clientId := (*ctx).Value("clientId").(int64)
+    clientId := ctx.Value("clientId").(int64)
     peerAddr, perr := service.AssignIPToClient(setupCtx, clientId)
     if perr != nil {
         return fmt.Errorf("Failed to get available IP: %w", perr)
