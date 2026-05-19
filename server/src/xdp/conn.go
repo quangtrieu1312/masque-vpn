@@ -36,6 +36,18 @@ func NewConn(
 	localAddr *net.UDPAddr,
 	numQueues int,
 ) (*Conn, error) {
+	// If localAddr has an unspecified IP (0.0.0.0), resolve the real
+    // IP from the interface. The raw Ethernet frames we build need a
+    // valid unicast source — the kernel won't fill this in for us.
+    frameLocalAddr := localAddr
+    if localAddr.IP == nil || localAddr.IP.IsUnspecified() {
+        ifaceIP, err := resolveIfaceIP(iface)
+        if err != nil {
+            return nil, fmt.Errorf("resolving IP for %s: %w", iface.Name, err)
+        }
+        frameLocalAddr = &net.UDPAddr{IP: ifaceIP, Port: localAddr.Port}
+    }
+
 	gwMAC, err := resolveNextHopMAC(iface, localAddr.IP)
 	if err != nil {
 		return nil, fmt.Errorf("resolving next-hop MAC: %w", err)
@@ -83,7 +95,7 @@ func NewConn(
 		sockets:   sockets,
 		fdToSock:  fdToSock,
 		epollFd:   epfd,
-		localAddr: localAddr,
+		localAddr: frameLocalAddr,
 		srcMAC:    iface.HardwareAddr,
 		dstMAC:    gwMAC,
 		done:      make(chan struct{}),
@@ -266,4 +278,25 @@ func closeSockets(sockets []*xdp.Socket) {
 			s.Close()
 		}
 	}
+}
+
+// resolveIfaceIP returns the first non-loopback unicast IPv4 address on iface.
+func resolveIfaceIP(iface *net.Interface) (net.IP, error) {
+    addrs, err := iface.Addrs()
+    if err != nil {
+        return nil, err
+    }
+    for _, a := range addrs {
+        var ip net.IP
+        switch v := a.(type) {
+        case *net.IPNet:
+            ip = v.IP
+        case *net.IPAddr:
+            ip = v.IP
+        }
+        if ip4 := ip.To4(); ip4 != nil && !ip4.IsLoopback() {
+            return ip4, nil
+        }
+    }
+    return nil, fmt.Errorf("no IPv4 address found on %s", iface.Name)
 }
