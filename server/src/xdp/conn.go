@@ -74,7 +74,7 @@ func NewConn(
 		// Pre-populate the fill ring so the kernel has UMEM frames
 		// to deliver incoming packets into. Without this, xsk_generic_rcv
 		// returns -ENOMEM on every packet and nothing ever arrives.
-		nFill := sock.NumFreeFillSlots()
+		nFill := sock.NumFreeFillSlots()/2
 		if nFill > 0 {
     		sock.Fill(sock.GetDescs(nFill))
 		}
