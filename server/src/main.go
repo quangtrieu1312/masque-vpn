@@ -460,7 +460,11 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 		EnableDatagrams: true,
 	}
 	upChan <- true
-	go s.ServeListener(ln)
+	go func() {
+		if err := s.ServeListener(ln); err != nil {
+			logger.Fatal(fmt.Sprintf("ServeListener error: %v", err))
+		}
+	}()
 	defer s.Close()
 	<-ctx.Done()
 	upChan <- false
