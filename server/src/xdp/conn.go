@@ -28,6 +28,7 @@ type Conn struct {
 	txIdx     atomic.Uint64
 	done      chan struct{}
 	epollEvents	[]unix.EpollEvent
+	mode	XDPMode
 }
 
 // NewConn creates AF_XDP sockets for each NIC queue, registers them into xskMap,
@@ -109,6 +110,7 @@ func NewConn(
 		gwMAC:     gwMAC,
 		done:      make(chan struct{}),
 		epollEvents: make([]unix.EpollEvent, numQueues),
+		mode: mode,
 	}, nil
 }
 
@@ -120,9 +122,6 @@ func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
 		case <-c.done:
 			return 0, nil, net.ErrClosed
 		default:
-		}
-		for _, sock := range c.sockets {
-    		sock.Poll(0)
 		}
 		n, err := unix.EpollWait(c.epollFd, c.epollEvents, 5 /* ms timeout */)
 		if err != nil {
@@ -224,8 +223,11 @@ func (c *Conn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	fmt.Printf("DEBUG WriteTo len=%d dst=%v dstMAC=%v\n", len(p), dst, dstMAC)
 	n := sock.Transmit(descs)
 	fmt.Printf("DEBUG Transmit n=%d\n", n)
-	nc, _, _ := sock.Poll(0) // kick the TX
-	fmt.Printf("DEBUG NumCompleted after poll=%d\n", nc)
+	if c.mode == XDPModeGeneric {
+    	unix.Sendto(sock.FD(), nil, unix.MSG_DONTWAIT, nil)
+	} else {
+    	sock.Poll(0)
+	}
 	return len(p), nil
 }
 
