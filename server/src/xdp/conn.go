@@ -228,6 +228,8 @@ func (c *Conn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	} else {
     	sock.Poll(0)
 	}
+	nc := sock.NumCompleted()
+	fmt.Printf("DEBUG NumCompleted=%d\n", nc)
 	return len(p), nil
 }
 
