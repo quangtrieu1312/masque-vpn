@@ -57,9 +57,17 @@ func defaultGatewayIP() (net.IP, error) {
 		return nil, fmt.Errorf("listing routes: %w", err)
 	}
 	for _, r := range routes {
-		if r.Dst == nil && r.Gw != nil { // default route
-			return r.Gw, nil
-		}
+		if r.Gw == nil {
+            continue
+        }
+        // default route can be nil Dst OR 0.0.0.0/0
+        if r.Dst == nil {
+            return r.Gw, nil
+        }
+        ones, bits := r.Dst.Mask.Size()
+        if ones == 0 && bits == 32 {
+            return r.Gw, nil
+        }
 	}
 	return nil, fmt.Errorf("no default IPv4 route found")
 }
