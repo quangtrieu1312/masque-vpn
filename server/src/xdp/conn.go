@@ -154,6 +154,7 @@ func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
 			}
 			gotPacket = true
 			frame := sock.GetFrame(descs[0])
+			frame = frame[:descs[0].Len]
 
 			// Learn the peer's L2 next-hop from the Ethernet src field
 			// (bytes 6-11) and store it for WriteTo. One client per Conn,
