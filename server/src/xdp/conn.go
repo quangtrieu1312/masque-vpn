@@ -235,6 +235,31 @@ func ipv4Checksum(hdr []byte) uint16 {
 	return ^uint16(sum)
 }
 
+// SetReadBuffer sets SO_RCVBUF on every underlying XSK file descriptor.
+// quic-go calls this via interface{ SetReadBuffer(int) error } —
+// without it, quic-go logs a "Not a *net.UDPConn?" warning and skips
+// buffer tuning entirely. AF_XDP's actual data path uses UMEM, not the
+// kernel socket buffer, but setting this silences the warning and
+// applies the option consistently across all queue sockets.
+func (c *Conn) SetReadBuffer(bytes int) error {
+	for _, sock := range c.sockets {
+		if err := unix.SetsockoptInt(sock.FD(), unix.SOL_SOCKET, unix.SO_RCVBUF, bytes); err != nil {
+			return fmt.Errorf("SO_RCVBUF on XSK fd %d: %w", sock.FD(), err)
+		}
+	}
+	return nil
+}
+
+// SetWriteBuffer sets SO_SNDBUF on every underlying XSK file descriptor.
+func (c *Conn) SetWriteBuffer(bytes int) error {
+	for _, sock := range c.sockets {
+		if err := unix.SetsockoptInt(sock.FD(), unix.SOL_SOCKET, unix.SO_SNDBUF, bytes); err != nil {
+			return fmt.Errorf("SO_SNDBUF on XSK fd %d: %w", sock.FD(), err)
+		}
+	}
+	return nil
+}
+
 func closeSockets(sockets []*xdp.Socket) {
 	for _, s := range sockets {
 		if s != nil {
