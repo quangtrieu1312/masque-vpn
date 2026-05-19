@@ -23,7 +23,8 @@ type Conn struct {
 	epollFd   int
 	localAddr *net.UDPAddr
 	srcMAC    net.HardwareAddr
-	dstMAC    net.HardwareAddr // next-hop (gateway) MAC
+	gwMAC     net.HardwareAddr              // fallback until first packet arrives
+	peerMAC   atomic.Pointer[net.HardwareAddr] // learned from first inbound frame src MAC
 	txIdx     atomic.Uint64
 	done      chan struct{}
 }
@@ -97,7 +98,7 @@ func NewConn(
 		epollFd:   epfd,
 		localAddr: frameLocalAddr,
 		srcMAC:    iface.HardwareAddr,
-		dstMAC:    gwMAC,
+		gwMAC:     gwMAC,
 		done:      make(chan struct{}),
 	}, nil
 }
@@ -128,11 +129,29 @@ func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
 			if !ok {
 				continue
 			}
+
+			// Reap any completed TX descriptors so the UMEM pool
+			// doesn't exhaust. Safe to call here since we hold no
+			// TX lock — AF_XDP completion ring is separate from RX.
+			if nc := sock.NumCompleted(); nc > 0 {
+				sock.Complete(nc)
+			}
+
 			descs := sock.Receive(1)
 			if len(descs) == 0 {
 				continue
 			}
 			frame := sock.GetFrame(descs[0])
+
+			// Learn the peer's L2 next-hop from the Ethernet src field
+			// (bytes 6-11) and store it for WriteTo. One client per Conn,
+			// so a single atomic pointer is all we need — no map.
+			if len(frame) >= 12 {
+				mac := make(net.HardwareAddr, 6)
+				copy(mac, frame[6:12])
+				c.peerMAC.Store(&mac)
+			}
+
 			pktLen, addr, err := parseUDPFrame(frame, p)
 			sock.Fill(descs) // return descriptor to fill ring
 			if err != nil {
@@ -160,12 +179,26 @@ func (c *Conn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	idx := int(c.txIdx.Add(1) % uint64(len(c.sockets)))
 	sock := c.sockets[idx]
 
+	// Reap completed TX descriptors before allocating new ones,
+	// so the UMEM free pool never exhausts.
+	if nc := sock.NumCompleted(); nc > 0 {
+		sock.Complete(nc)
+	}
+
 	descs := sock.GetDescs(1)
 	if len(descs) == 0 {
 		return 0, fmt.Errorf("TX ring full, dropping packet")
 	}
 	frame := sock.GetFrame(descs[0])
-	total := buildUDPFrame(frame, c.srcMAC, c.dstMAC, c.localAddr, dst, p)
+
+	// Use the peer's MAC learned from the first inbound frame.
+	// Falls back to gwMAC only before the first packet has arrived.
+	dstMAC := c.gwMAC
+	if p := c.peerMAC.Load(); p != nil {
+		dstMAC = *p
+	}
+
+	total := buildUDPFrame(frame, c.srcMAC, dstMAC, c.localAddr, dst, p)
 	descs[0].Len = uint32(total)
 	sock.Transmit(descs)
 	sock.Poll(0) // kick the TX
