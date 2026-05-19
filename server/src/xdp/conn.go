@@ -222,8 +222,10 @@ func (c *Conn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	total := buildUDPFrame(frame, c.srcMAC, dstMAC, c.localAddr, dst, p)
 	descs[0].Len = uint32(total)
 	fmt.Printf("DEBUG WriteTo len=%d dst=%v dstMAC=%v\n", len(p), dst, dstMAC)
-	sock.Transmit(descs)
-	sock.Poll(0) // kick the TX
+	n := sock.Transmit(descs)
+	fmt.Printf("DEBUG Transmit n=%d\n", n)
+	nc, _, _ := sock.Poll(0) // kick the TX
+	fmt.Printf("DEBUG NumCompleted after poll=%d\n", nc)
 	return len(p), nil
 }
 
