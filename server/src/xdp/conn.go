@@ -165,13 +165,15 @@ func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
 			}
 
 			pktLen, addr, err := parseUDPFrame(frame, p)
-			if err != nil {
-				continue // skip malformed frames
-			}
 			sock.Fill(descs) // return descriptor to fill ring
 			if n := sock.NumFreeFillSlots(); n > 0 {
  	   			sock.Fill(sock.GetDescs(n))
 			}
+			if err != nil {
+				fmt.Printf("DEBUG parseUDPFrame err: %v\n", err)
+				continue // skip malformed frames
+			}
+			fmt.Printf("DEBUG got packet len=%d from=%v\n", pktLen, addr)
 			return pktLen, addr, nil
 		}
 		if !gotPacket {
@@ -218,6 +220,7 @@ func (c *Conn) WriteTo(p []byte, addr net.Addr) (int, error) {
 
 	total := buildUDPFrame(frame, c.srcMAC, dstMAC, c.localAddr, dst, p)
 	descs[0].Len = uint32(total)
+	fmt.Printf("DEBUG WriteTo len=%d dst=%v dstMAC=%v\n", len(p), dst, dstMAC)
 	sock.Transmit(descs)
 	sock.Poll(0) // kick the TX
 	return len(p), nil
