@@ -1,4 +1,3 @@
-//n -modcache && go mod tidy
 //go:build linux
 
 package xdp
@@ -9,7 +8,6 @@ import (
 	"net"
 	"sync/atomic"
 	"time"
-	"unsafe"
 	"runtime"
 
 	"github.com/asavie/xdp"
@@ -90,7 +88,7 @@ func NewConn(
 		// store FD in epoll data so we can look up the socket on wake
 		var ev unix.EpollEvent
 		ev.Events = unix.EPOLLIN
-		*(*int32)(unsafe.Pointer(uintptr(unsafe.Pointer(&ev)) + 4)) = int32(sock.FD())
+		ev.Fd = int32(sock.FD())
 		if err := unix.EpollCtl(epfd, unix.EPOLL_CTL_ADD, sock.FD(), &ev); err != nil {
 			sock.Close()
 			closeSockets(sockets[:i])
@@ -133,8 +131,7 @@ func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
 		}
 		gotPacket := false
 		for i := 0; i < n; i++ {
-			fd := int(*(*int32)(unsafe.Pointer(uintptr(unsafe.Pointer(&c.epollEvents[i])) + 4)))
-
+			fd := int(c.epollEvents[i].Fd)
 			sock, ok := c.fdToSock[fd]
 			if !ok {
 				fmt.Printf("DEBUG: epoll fd=%d not in fdToSock keys=%v\n", fd, c.fdToSock)
