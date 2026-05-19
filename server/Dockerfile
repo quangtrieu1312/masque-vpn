@@ -8,7 +8,6 @@ RUN ln -sf /usr/include/$(uname -m)-linux-gnu/asm /usr/include/asm
 COPY src /server/src
 COPY lib /lib
 COPY build.sh /server/build.sh
-RUN cd /server/src/xdp && go generate ./...
 RUN chmod +x /server/build.sh && /server/build.sh
 
 FROM ubuntu:24.04 as runner

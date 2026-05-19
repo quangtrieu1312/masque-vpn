@@ -67,7 +67,7 @@ func NewConn(
 		// store FD in epoll data so we can look up the socket on wake
 		var ev unix.EpollEvent
 		ev.Events = unix.EPOLLIN
-		*(*int32)(unsafe.Pointer(&ev.Data[0])) = int32(sock.FD())
+		*(*int32)(unsafe.Pointer(uintptr(unsafe.Pointer(&ev)) + 4)) = int32(sock.FD())
 		if err := unix.EpollCtl(epfd, unix.EPOLL_CTL_ADD, sock.FD(), &ev); err != nil {
 			sock.Close()
 			closeSockets(sockets[:i])
@@ -110,7 +110,8 @@ func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
 		}
 
 		for i := 0; i < n; i++ {
-			fd := int(*(*int32)(unsafe.Pointer(&events[i].Data[0])))
+			fd := int(*(*int32)(unsafe.Pointer(uintptr(unsafe.Pointer(&events[i])) + 4)))
+
 			sock, ok := c.fdToSock[fd]
 			if !ok {
 				continue
@@ -121,7 +122,7 @@ func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
 			}
 			frame := sock.GetFrame(descs[0])
 			pktLen, addr, err := parseUDPFrame(frame, p)
-			sock.FillAll(descs) // return descriptor to fill ring
+			sock.Fill(descs) // return descriptor to fill ring
 			if err != nil {
 				continue // skip malformed frames
 			}
@@ -147,7 +148,7 @@ func (c *Conn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	idx := int(c.txIdx.Add(1) % uint64(len(c.sockets)))
 	sock := c.sockets[idx]
 
-	descs := sock.GetDescs(1, true)
+	descs := sock.GetDescs(1)
 	if len(descs) == 0 {
 		return 0, fmt.Errorf("TX ring full, dropping packet")
 	}
