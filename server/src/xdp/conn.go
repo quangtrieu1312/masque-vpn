@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
+	"runtime"
 
 	"github.com/asavie/xdp"
 	"github.com/cilium/ebpf"
@@ -28,6 +29,7 @@ type Conn struct {
 	peerMAC   atomic.Pointer[net.HardwareAddr] // learned from first inbound frame src MAC
 	txIdx     atomic.Uint64
 	done      chan struct{}
+	epollEvents	[]unix.EpollEvent
 }
 
 // NewConn creates AF_XDP sockets for each NIC queue, registers them into xskMap,
@@ -37,6 +39,7 @@ func NewConn(
 	xskMap *ebpf.Map,
 	localAddr *net.UDPAddr,
 	numQueues int,
+	mode XDPMode,
 ) (*Conn, error) {
 	// If localAddr has an unspecified IP (0.0.0.0), resolve the real
     // IP from the interface. The raw Ethernet frames we build need a
@@ -59,16 +62,17 @@ func NewConn(
 	if err != nil {
 		return nil, fmt.Errorf("epoll_create1: %w", err)
 	}
-
+	sockOpts := &xdp.SocketOptions{
+		Flags: unix.XDP_COPY, // safe for generic mode, virtio_net, and bare metal
+	}
 	sockets := make([]*xdp.Socket, numQueues)
 	fdToSock := make(map[int]*xdp.Socket, numQueues)
-
 	for i := 0; i < numQueues; i++ {
-		sock, err := xdp.NewSocket(iface.Index, i, nil)
+		sock, err := xdp.NewSocket(iface.Index, i, sockOpts)
 		if err != nil {
 			closeSockets(sockets[:i])
 			unix.Close(epfd)
-			return nil, fmt.Errorf("XSK queue %d: %w", i, err)
+			return nil, fmt.Errorf("XSK queue %d (XDP mode %s): %w", i, mode, err)
 		}
 
 		// Pre-populate the fill ring so the kernel has UMEM frames
@@ -109,13 +113,13 @@ func NewConn(
 		srcMAC:    iface.HardwareAddr,
 		gwMAC:     gwMAC,
 		done:      make(chan struct{}),
+		epollEvents: make([]unix.EpollEvent, numQueues),
 	}, nil
 }
 
 // ReadFrom blocks until a UDP packet arrives on any queue.
 // Strips Ethernet + IPv4 + UDP headers and returns the payload.
 func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
-	events := make([]unix.EpollEvent, len(c.sockets))
 	for {
 		select {
 		case <-c.done:
@@ -123,16 +127,16 @@ func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
 		default:
 		}
 
-		n, err := unix.EpollWait(c.epollFd, events, 5 /* ms timeout */)
+		n, err := unix.EpollWait(c.epollFd, c.epollEvents, 5 /* ms timeout */)
 		if err != nil {
 			if err == unix.EINTR {
 				continue
 			}
 			return 0, nil, fmt.Errorf("epoll_wait: %w", err)
 		}
-
+		gotPacket := false
 		for i := 0; i < n; i++ {
-			fd := int(*(*int32)(unsafe.Pointer(uintptr(unsafe.Pointer(&events[i])) + 4)))
+			fd := int(*(*int32)(unsafe.Pointer(uintptr(unsafe.Pointer(&c.epollEvents[i])) + 4)))
 
 			sock, ok := c.fdToSock[fd]
 			if !ok {
@@ -150,6 +154,7 @@ func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
 			if len(descs) == 0 {
 				continue
 			}
+			gotPacket = true
 			frame := sock.GetFrame(descs[0])
 
 			// Learn the peer's L2 next-hop from the Ethernet src field
@@ -167,6 +172,9 @@ func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
 				continue // skip malformed frames
 			}
 			return pktLen, addr, nil
+		}
+		if !gotPacket {
+			runtime.Gosched()
 		}
 	}
 }

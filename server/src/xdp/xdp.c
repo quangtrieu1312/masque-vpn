@@ -24,10 +24,12 @@ int masque_xdp_prog(struct xdp_md *ctx) {
     if (eth->h_proto != __constant_htons(ETH_P_IP)) return XDP_PASS;
 
     struct iphdr *ip = (void *)(eth + 1);
-    if ((void *)(ip + 1) > data_end) return XDP_PASS;
     if (ip->protocol != IPPROTO_UDP) return XDP_PASS;
 
-    struct udphdr *udp = (void *)(ip + 1);
+    __u32 ihl = (ip->ihl & 0x0f) * 4;
+    if (ihl < 20) return XDP_PASS;
+
+    struct udphdr *udp = (void *)(ip + ihl);
     if ((void *)(udp + 1) > data_end) return XDP_PASS;
 
     if (udp->dest == __constant_htons(443)) {
