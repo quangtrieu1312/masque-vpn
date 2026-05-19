@@ -121,7 +121,9 @@ func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
 			return 0, nil, net.ErrClosed
 		default:
 		}
-
+		for _, sock := range c.sockets {
+    		sock.Poll(0)
+		}
 		n, err := unix.EpollWait(c.epollFd, c.epollEvents, 5 /* ms timeout */)
 		if err != nil {
 			if err == unix.EINTR {
