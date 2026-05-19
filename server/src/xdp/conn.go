@@ -137,6 +137,7 @@ func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
 
 			sock, ok := c.fdToSock[fd]
 			if !ok {
+				fmt.Printf("DEBUG: epoll fd=%d not in fdToSock keys=%v\n", fd, c.fdToSock)
 				continue
 			}
 
