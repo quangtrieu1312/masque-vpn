@@ -200,7 +200,7 @@ func (c *Conn) WriteTo(p []byte, addr net.Addr) (int, error) {
 		sock.Complete(nc)
 	}
 
-	descs := sock.GetDescs(1)
+	descs := sock.GetDescs(1, false)
 	if len(descs) == 0 {
 		return 0, fmt.Errorf("TX ring full, dropping packet")
 	}
