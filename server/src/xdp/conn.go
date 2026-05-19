@@ -1,3 +1,4 @@
+//n -modcache && go mod tidy
 //go:build linux
 
 package xdp
@@ -68,6 +69,14 @@ func NewConn(
 			closeSockets(sockets[:i])
 			unix.Close(epfd)
 			return nil, fmt.Errorf("XSK queue %d: %w", i, err)
+		}
+
+		// Pre-populate the fill ring so the kernel has UMEM frames
+		// to deliver incoming packets into. Without this, xsk_generic_rcv
+		// returns -ENOMEM on every packet and nothing ever arrives.
+		nFill := sock.NumFreeFillSlots()
+		if nFill > 0 {
+    		sock.Fill(sock.GetDescs(nFill))
 		}
 
 		if err := xskMap.Update(uint32(i), uint32(sock.FD()), ebpf.UpdateAny); err != nil {
