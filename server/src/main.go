@@ -479,6 +479,7 @@ func handleConn(ctx context.Context, tunChan chan *packet,  conn *connectip.Conn
     // I may want to go back to this hardcoded number when I see issues for site-to-side VPN
     clientId := ctx.Value("clientId").(int64)
     peerAddr, perr := service.AssignIPToClient(setupCtx, clientId)
+	logger.Info(fmt.Sprintf("Assigned IP %s to client %d", peerAddr, clientId))
     if perr != nil {
         return fmt.Errorf("Failed to get available IP: %w", perr)
     }
@@ -601,7 +602,7 @@ func handleConn(ctx context.Context, tunChan chan *packet,  conn *connectip.Conn
 	}()
 
 	err := <-errChan
-	logger.Error(fmt.Sprintf("error proxying: %v", err))
+	logger.Error(fmt.Sprintf("handleConn exiting for client addr=%s err=%v", addr, err))
     mu.Lock()
     delete(ipToTunChan, addr)
     mu.Unlock()
