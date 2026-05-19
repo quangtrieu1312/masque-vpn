@@ -62,13 +62,10 @@ func NewConn(
 	if err != nil {
 		return nil, fmt.Errorf("epoll_create1: %w", err)
 	}
-	sockOpts := &xdp.SocketOptions{
-		Flags: unix.XDP_COPY, // safe for generic mode, virtio_net, and bare metal
-	}
 	sockets := make([]*xdp.Socket, numQueues)
 	fdToSock := make(map[int]*xdp.Socket, numQueues)
 	for i := 0; i < numQueues; i++ {
-		sock, err := xdp.NewSocket(iface.Index, i, sockOpts)
+		sock, err := xdp.NewSocket(iface.Index, i, nil)
 		if err != nil {
 			closeSockets(sockets[:i])
 			unix.Close(epfd)
