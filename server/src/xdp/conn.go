@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"sync/atomic"
+	"sync"
 	"time"
 	"runtime"
 
@@ -29,6 +30,7 @@ type Conn struct {
 	done      chan struct{}
 	epollEvents	[]unix.EpollEvent
 	mode	XDPMode
+	mu	sync.Mutex
 }
 
 // NewConn creates AF_XDP sockets for each NIC queue, registers them into xskMap,
@@ -137,12 +139,14 @@ func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
 			// Reap any completed TX descriptors so the UMEM pool
 			// doesn't exhaust. Safe to call here since we hold no
 			// TX lock — AF_XDP completion ring is separate from RX.
+			c.mu.Lock()
 			if nc := sock.NumCompleted(); nc > 0 {
 				sock.Complete(nc)
 			}
 
 			fmt.Printf("DEBUG: fd=%d events=%d numReceived=%d\n", fd, c.epollEvents[i].Events, sock.NumReceived())
 			descs := sock.Receive(1)
+			c.mu.Unlock()
 			if len(descs) == 0 {
 				continue
 			}
@@ -160,10 +164,12 @@ func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
 			}
 
 			pktLen, addr, err := parseUDPFrame(frame, p)
+			c.mu.Lock()
 			sock.Fill(descs) // return descriptor to fill ring
 			if n := sock.NumFreeFillSlots(); n > 0 {
  	   			sock.Fill(sock.GetDescs(n, true))
 			}
+			c.mu.Unlock()
 			if err != nil {
 				fmt.Printf("DEBUG parseUDPFrame err: %v\n", err)
 				continue // skip malformed frames
@@ -196,11 +202,13 @@ func (c *Conn) WriteTo(p []byte, addr net.Addr) (int, error) {
 
 	// Reap completed TX descriptors before allocating new ones,
 	// so the UMEM free pool never exhausts.
+	c.mu.Lock()
 	if nc := sock.NumCompleted(); nc > 0 {
 		sock.Complete(nc)
 	}
 
 	descs := sock.GetDescs(1, false)
+	c.mu.Unlock()
 	if len(descs) == 0 {
 		return 0, fmt.Errorf("TX ring full, dropping packet")
 	}
@@ -216,13 +224,18 @@ func (c *Conn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	total := buildUDPFrame(frame, c.srcMAC, dstMAC, c.localAddr, dst, p)
 	descs[0].Len = uint32(total)
 	fmt.Printf("DEBUG WriteTo len=%d dst=%v dstMAC=%v\n", len(p), dst, dstMAC)
+
+	c.mu.Lock()
 	n := sock.Transmit(descs)
 	fmt.Printf("DEBUG Transmit n=%d\n", n)
 	if c.mode == XDPModeGeneric {
-    	unix.Send(sock.FD(), nil, unix.MSG_DONTWAIT)
+		if err := unix.Send(sock.FD(), nil, unix.MSG_DONTWAIT); err != nil && err != unix.EAGAIN {
+    		fmt.Printf("TX kick error: %v\n", err)
+		}
 	} else {
     	sock.Poll(0)
 	}
+	c.mu.Unlock()
 	nc := sock.NumCompleted()
 	fmt.Printf("DEBUG NumCompleted=%d\n", nc)
 	return len(p), nil
