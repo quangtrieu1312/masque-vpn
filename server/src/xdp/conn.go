@@ -229,7 +229,7 @@ func (c *Conn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	n := sock.Transmit(descs)
 	fmt.Printf("DEBUG Transmit n=%d\n", n)
 	if c.mode == XDPModeGeneric {
-		if err := unix.Send(sock.FD(), nil, unix.MSG_DONTWAIT); err != nil && err != unix.EAGAIN {
+		if err := unix.Send(sock.FD(), nil, unix.MSG_DONTWAIT); err != nil {
     		fmt.Printf("TX kick error: %v\n", err)
 		}
 	} else {
