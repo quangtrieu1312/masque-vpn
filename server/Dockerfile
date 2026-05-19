@@ -8,6 +8,10 @@ RUN ln -sf /usr/include/$(uname -m)-linux-gnu/asm /usr/include/asm
 COPY src /server/src
 COPY lib /lib
 COPY build.sh /server/build.sh
+# Install bpf2go at the version pinned in go.mod
+RUN BPFGO_VERSION=$(grep 'github.com/cilium/ebpf' /server/src/go.mod | awk '{print $2}') && \
+    GOPATH=/root/go go install github.com/cilium/ebpf/cmd/bpf2go@${BPFGO_VERSION}
+ENV PATH=$PATH:/root/go/bin
 RUN chmod +x /server/build.sh && /server/build.sh
 
 FROM ubuntu:24.04 as runner
