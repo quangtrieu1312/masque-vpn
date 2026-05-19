@@ -162,9 +162,12 @@ func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
 			}
 
 			pktLen, addr, err := parseUDPFrame(frame, p)
-			sock.Fill(descs) // return descriptor to fill ring
 			if err != nil {
 				continue // skip malformed frames
+			}
+			sock.Fill(descs) // return descriptor to fill ring
+			if n := sock.NumFreeFillSlots(); n > 0 {
+ 	   			sock.Fill(sock.GetDescs(n))
 			}
 			return pktLen, addr, nil
 		}
