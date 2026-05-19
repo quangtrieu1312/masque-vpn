@@ -11,7 +11,7 @@ import (
 )
 
 type Loader struct {
-	objs masqueXDPObjects
+	objs MasqueXDPObjects
 	link link.Link
 }
 
@@ -23,8 +23,8 @@ func Load(ifaceName string) (*Loader, error) {
 		return nil, fmt.Errorf("interface %q not found: %w", ifaceName, err)
 	}
 
-	objs := masqueXDPObjects{}
-	if err := loadMasqueXDPObjects(&objs, nil); err != nil {
+	objs := MasqueXDPObjects{}
+	if err := LoadMasqueXDPObjects(&objs, nil); err != nil {
 		return nil, fmt.Errorf("loading XDP objects: %w", err)
 	}
 
