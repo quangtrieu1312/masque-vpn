@@ -1,4 +1,4 @@
-FROM ubuntu:24.04 as builder
+FROM ubuntu:24.04 AS builder
 
 WORKDIR /server
 RUN apt-get update && apt upgrade -y
@@ -10,7 +10,7 @@ COPY lib /masque-vpn/lib
 COPY build.sh /masque-vpn/server/build.sh
 RUN chmod +x /masque-vpn/server/build.sh && /masque-vpn/server/build.sh
 
-FROM ubuntu:24.04 as runner
+FROM ubuntu:24.04 AS runner
 
 RUN apt-get update && apt upgrade -y
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y \
