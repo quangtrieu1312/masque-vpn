@@ -223,7 +223,7 @@ func (c *Conn) WriteTo(p []byte, addr net.Addr) (int, error) {
 
 	total := buildUDPFrame(frame, c.srcMAC, dstMAC, c.localAddr, dst, p)
 	descs[0].Len = uint32(total)
-	fmt.Printf("DEBUG WriteTo len=%d dst=%v dstMAC=%v\n", len(p), dst, dstMAC)
+	fmt.Printf("DEBUG WriteTo len=%d dst=%v dstMAC=%v srcMAC=%v\n", len(p), dst, dstMAC, c.srcMAC)
 
 	c.mu.Lock()
 	n := sock.Transmit(descs)
