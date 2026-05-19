@@ -4,7 +4,9 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
+      - SYS_ADMIN
     privileged: true
+    network_mode: host
     environment:
       - GOTRACEBACK=all
       - GODEBUG=cgocheck=0
