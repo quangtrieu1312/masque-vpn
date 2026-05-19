@@ -147,7 +147,8 @@ func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
 				sock.Complete(nc)
 			}
 
-			descs := sock.Receive(1)
+			fmt.Printf("DEBUG: fd=%d events=%d numReceived=%d\n", fd, c.epollEvents[i].Events, sock.NumReceived())
+			descs := sock.Receive(sock.NumReceived())
 			if len(descs) == 0 {
 				continue
 			}
