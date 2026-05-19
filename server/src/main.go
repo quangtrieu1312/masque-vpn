@@ -416,6 +416,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
     	}(dev, i)
 	}
 	mux.HandleFunc("/vpn", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Printf("DEBUG /vpn handler reached, TLS peer certs: %d\n", len(r.TLS.PeerCertificates))
         commonName := r.TLS.PeerCertificates[0].Subject.CommonName
     	clientId, err := strconv.ParseInt(commonName, 10, 64)
 		if err != nil {
