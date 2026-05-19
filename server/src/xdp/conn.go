@@ -10,7 +10,7 @@ import (
 	"time"
 	"runtime"
 
-	"github.com/asavie/xdp"
+	"github.com/slavc/xdp"
 	"github.com/cilium/ebpf"
 	"golang.org/x/sys/unix"
 )
@@ -71,13 +71,8 @@ func NewConn(
 			return nil, fmt.Errorf("XSK queue %d (XDP mode %s): %w", i, mode, err)
 		}
 
-		// Pre-populate the fill ring so the kernel has UMEM frames
-		// to deliver incoming packets into. Without this, xsk_generic_rcv
-		// returns -ENOMEM on every packet and nothing ever arrives.
-		nFill := sock.NumFreeFillSlots()/2
-		if nFill > 0 {
-    		sock.Fill(sock.GetDescs(nFill))
-		}
+		nFill := sock.NumFreeFillSlots()
+    	sock.Fill(sock.GetDescs(nFill, true))
 
 		if err := xskMap.Update(uint32(i), uint32(sock.FD()), ebpf.UpdateAny); err != nil {
 			sock.Close()
@@ -167,7 +162,7 @@ func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
 			pktLen, addr, err := parseUDPFrame(frame, p)
 			sock.Fill(descs) // return descriptor to fill ring
 			if n := sock.NumFreeFillSlots(); n > 0 {
- 	   			sock.Fill(sock.GetDescs(n))
+ 	   			sock.Fill(sock.GetDescs(n, true))
 			}
 			if err != nil {
 				fmt.Printf("DEBUG parseUDPFrame err: %v\n", err)
@@ -224,7 +219,7 @@ func (c *Conn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	n := sock.Transmit(descs)
 	fmt.Printf("DEBUG Transmit n=%d\n", n)
 	if c.mode == XDPModeGeneric {
-    	unix.Sendto(sock.FD(), nil, unix.MSG_DONTWAIT, nil)
+    	unix.Send(sock.FD(), nil, unix.MSG_DONTWAIT)
 	} else {
     	sock.Poll(0)
 	}

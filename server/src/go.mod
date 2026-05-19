@@ -9,6 +9,7 @@ require (
 	github.com/praserx/ipconv v1.2.2
 	github.com/quic-go/connect-ip-go v0.1.0
 	github.com/quic-go/quic-go v0.59.0
+	github.com/slavc/xdp v0.3.4
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/vishvananda/netlink v1.3.0
 	github.com/yosida95/uritemplate/v3 v3.0.2
