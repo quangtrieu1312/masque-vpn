@@ -312,7 +312,14 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 		return fmt.Errorf("interface %s: %w", ifaceName, err)
 	}
 	localAddr := &net.UDPAddr{IP: bindTo.Addr().AsSlice(), Port: int(bindTo.Port())}
-	afxdpConn, err := xdp.NewConn(iface, xdpLoader.XskMap(), localAddr, runtime.NumCPU())
+	nicQueues, err := xdp.GetQueueInfo(ifaceName)
+	if err != nil {
+    	return fmt.Errorf("reading NIC queue info for %s: %w", ifaceName, err)
+	}
+	logger.Info(fmt.Sprintf("NIC %s: %d active RX queues (soft limit) — extend with: ethtool -L %s combined N",
+    	ifaceName, nicQueues.RX, ifaceName))
+	
+	afxdpConn, err := xdp.NewConn(iface, xdpLoader.XskMap(), localAddr, nicQueues.RX)
 	if err != nil {
 		return fmt.Errorf("creating AF_XDP conn: %w", err)
 	}
