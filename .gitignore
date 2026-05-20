@@ -8,6 +8,9 @@ server/masqued.conf
 client/certs/**
 client/masque.conf
 
+**/**_bpfel.go
+**/**_bpfel.o
+
 **/.env
 **/keys.txt
 

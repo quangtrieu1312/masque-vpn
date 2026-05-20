@@ -1,0 +1,51 @@
+name: Build interop Docker image
+
+permissions: read-all
+
+on: 
+  push:
+    branches:
+      - master
+    tags:
+      - 'v*'
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+jobs:
+  interop:
+    runs-on: ${{ fromJSON(vars['DOCKER_RUNNER_UBUNTU'] || '"ubuntu-latest"') }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+        with:
+          platforms: linux/amd64,linux/arm64
+      - name: Login to Docker Hub
+        if: github.event_name == 'push'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: set tag name
+        id: tag
+        # Tagged releases won't be picked up by the interop runner automatically,
+        # but they can be useful when debugging regressions.
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" | tee -a $GITHUB_OUTPUT;
+          else
+            echo 'tag=latest' | tee -a $GITHUB_OUTPUT;
+          fi
+      - uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: "."
+          file: "interop/Dockerfile"
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name == 'push' }}
+          tags: martenseemann/quic-go-interop:${{ steps.tag.outputs.tag }}

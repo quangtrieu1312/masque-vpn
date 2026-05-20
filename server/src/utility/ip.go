@@ -95,3 +95,7 @@ func PrefixToIPNet(prefix netip.Prefix) *net.IPNet {
 		Mask: net.CIDRMask(prefix.Bits(), prefix.Addr().BitLen()),
 	}
 }
+
+func htons(host uint16) uint16 {
+	return (host<<8)&0xff00 | (host>>8)&0xff
+}

@@ -1,7 +1,6 @@
 //go:build linux
 
 package main
-
 import (
 	"context"
 	"crypto/tls"
@@ -18,6 +17,8 @@ import (
 	"os/exec"
 	"os/signal"
     "syscall"
+    "runtime"
+	_ "net/http/pprof"
 
 	"golang.org/x/sys/unix"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"github.com/yosida95/uritemplate/v3"
 
+	xdp "github.com/quangtrieu1312/masque-vpn/server/xdp"
     "github.com/quangtrieu1312/masque-vpn/server/constants"
     "github.com/quangtrieu1312/masque-vpn/server/utility"
     "github.com/quangtrieu1312/masque-vpn/server/db"
@@ -37,10 +39,18 @@ import (
     "github.com/quangtrieu1312/masque-vpn/server/migration"
     "github.com/quangtrieu1312/masque-vpn/server/service"
 )
-
-var tunTapDevice *water.Interface
+type packet struct {
+    buf []byte
+    n   int
+}
+var packetPool = sync.Pool{
+    New: func() any {
+        return &packet{buf: make([]byte, 1500)}
+    },
+}
+var tunTapDevice []*water.Interface
 var mu *sync.RWMutex
-var ipToTunChan map[string](chan []byte)
+var ipToTunChan map[netip.Addr](chan *packet)
 var wanAddr netip.Addr
 
 func main() {
@@ -110,11 +120,11 @@ func main() {
 	}
 
 	netBitSize, _ := virtSubnet.Mask.Size()
-	dev, err := createTunTapDevice(ctx, virtIp.String(), netBitSize, int(mtu))
+	devs, err := createTunTapDevice(ctx, virtIp.String(), netBitSize, int(mtu))
 	if err != nil {
 		logger.Fatal(fmt.Sprintf("failed to create tun/tap device: %v", err))
 	}
-    tunTapDevice = dev
+    tunTapDevice = devs
 
 	upChan := make(chan bool)
     go func(ctxt context.Context) {
@@ -158,7 +168,17 @@ func RunPostUp(ctx context.Context) {
     if err != nil {
         logger.Fatal(fmt.Sprintf("Cannot run postup scripts: %v", err))
     }
-    RunManagementService(ctx)
+	go func(contxt context.Context) {
+    	RunManagementService(contxt)
+	}(ctx)
+	go http.ListenAndServe("localhost:6060", nil)
+	go func() {
+    	t := time.NewTicker(5 * time.Second)
+    	for range t.C {
+        	f, p, avg := utility.BatchStats()
+        	logger.Info(fmt.Sprintf("sendmmsg stats: flushes=%d packets=%d avg_batch=%.2f", f, p, avg))
+    	}
+	}()
 }
 
 func RunPreDown() {
@@ -175,14 +195,39 @@ func GracefullyShutDown(ctx context.Context) {
     db.CloseConnection()
 }
 
-func createTunTapDevice(ctx context.Context, virtIp string, virtPrefixLen int, mtu int) (*water.Interface, error) {
-	dev, err := water.New(water.Config{DeviceType: water.TUN})
-	if err != nil {
-		return nil, fmt.Errorf("Failed to create TUN device: %w", err)
-	}
-	logger.Info(fmt.Sprintf("Created TUN device: %s", dev.Name()))
+func createTunTapDevice(ctx context.Context, virtIp string, virtPrefixLen int, mtu int) ([]*water.Interface, error) {
+    numQueues := runtime.NumCPU()
+    devs := make([]*water.Interface, numQueues)
 
-	link, err := netlink.LinkByName(dev.Name())
+	// First device — let OS assign name
+	var err error
+	devs[0], err = water.New(water.Config{
+    	DeviceType: water.TUN,
+    	PlatformSpecificParams: water.PlatformSpecificParams{
+        	MultiQueue: true,
+    	},
+	})
+	if err != nil {
+    	return nil, fmt.Errorf("failed to create TUN device queue 0: %w", err)
+	}
+	devName := devs[0].Name()
+	logger.Info(fmt.Sprintf("Created TUN device: %s", devName))
+	// Subsequent queues — MUST use same name
+	for i := 1; i < numQueues; i++ {
+    	dev, err := water.New(water.Config{
+        	DeviceType: water.TUN,
+        	PlatformSpecificParams: water.PlatformSpecificParams{
+            	Name:       devName, // same device, new fd
+            	MultiQueue: true,
+        	},
+    	})
+    	if err != nil {
+        	return nil, fmt.Errorf("failed to create TUN queue %d: %w", i, err)
+    	}
+    	devs[i] = dev
+	}
+
+	link, err := netlink.LinkByName(devs[0].Name())
 	if err != nil {
 		return nil, fmt.Errorf("Failed to get TUN interface: %w", err)
 	}
@@ -191,7 +236,7 @@ func createTunTapDevice(ctx context.Context, virtIp string, virtPrefixLen int, m
 	}
     addr, err := netlink.ParseAddr(virtIp + "/" + strconv.Itoa(virtPrefixLen))
     if err != nil {
-        return nil, fmt.Errorf("Failed to assign IP to %v: %v", dev.Name(), err)
+        return nil, fmt.Errorf("Failed to assign IP to %v: %v", devs[0].Name(), err)
     }
     netlink.AddrAdd(link, addr)
     netlink.LinkSetMTU(link, mtu)
@@ -209,7 +254,7 @@ func createTunTapDevice(ctx context.Context, virtIp string, virtPrefixLen int, m
 	if err := netlink.RouteAdd(route); err != nil {
 		return nil, fmt.Errorf("Failed to add route %v: %w", route, err)
 	}
-	return dev, nil
+	return devs, nil
 }
 
 func createSendSocket(addr netip.Addr) (int, error) {
@@ -251,47 +296,34 @@ func createSendSocketIPv6(addr netip.Addr) (int, error) {
 	return fd, nil
 }
 
-func htons(host uint16) uint16 {
-	return (host<<8)&0xff00 | (host>>8)&0xff
-}
 
 func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProtocol uint8) error {
     ctx, cancel := context.WithCancel(ctxt)
     defer cancel()
-	mark := 31289
-	lc := net.ListenConfig{
-		Control: func(network, addr string, c syscall.RawConn) error {
-			var soErr error
-			err := c.Control(func(fd uintptr) {
-				soErr = unix.SetsockoptInt(
-					int(fd),
-					unix.SOL_SOCKET, // level  : socket layer
-					unix.SO_MARK,    // optname: SO_MARK
-					mark,            // optval : 51820
-				)
-			})
-			if err != nil {
-				return fmt.Errorf("RawConn.Control: %w", err)
-			}
-			if soErr != nil {
-				return fmt.Errorf("setsockopt(SOL_SOCKET, SO_MARK, %d): %w"+
-					" — process needs CAP_NET_ADMIN", mark, soErr)
-			}
-			return nil
-		},
-	}
-	pc, err := lc.ListenPacket(context.Background(), "udp", fmt.Sprintf("%v:%d",bindTo.Addr().String(), bindTo.Port()))
+	ifaceName := ctxt.Value("WAN_INTERFACE").(string)
+	xdpLoader, err := xdp.Load(ifaceName)
 	if err != nil {
-		return fmt.Errorf("Failed to listen on UDP: %w", err)
+		return fmt.Errorf("loading XDP program: %w", err)
 	}
-	defer pc.Close()
- 
-	udpConn, ok := pc.(*net.UDPConn)
-	if !ok {
-		return fmt.Errorf("expected *net.UDPConn, got %T", pc)
-	}
-	defer udpConn.Close()
+	defer xdpLoader.Close()
 
+	iface, err := net.InterfaceByName(ifaceName)
+	if err != nil {
+		return fmt.Errorf("interface %s: %w", ifaceName, err)
+	}
+	localAddr := &net.UDPAddr{IP: bindTo.Addr().AsSlice(), Port: int(bindTo.Port())}
+	nicQueues, err := xdp.GetQueueInfo(ifaceName)
+	if err != nil {
+    	return fmt.Errorf("reading NIC queue info for %s: %w", ifaceName, err)
+	}
+	logger.Info(fmt.Sprintf("NIC %s: %d active RX queues (soft limit) — extend with: ethtool -L %s combined N",
+    	ifaceName, nicQueues.RX, ifaceName))
+
+	afxdpConn, err := xdp.NewConn(iface, xdpLoader.XskMap(), localAddr, nicQueues.RX, xdpLoader.Mode())
+	if err != nil {
+		return fmt.Errorf("creating AF_XDP conn: %w", err)
+	}
+	defer afxdpConn.Close()
 	cert, err := tls.LoadX509KeyPair(constants.SERVER_CERT_PATH, constants.SERVER_KEY_PATH)
 	if err != nil {
 		return fmt.Errorf("Failed to load TLS certificate: %w", err)
@@ -304,7 +336,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
     if err != nil {
         return fmt.Errorf("Cannot read client CA:", err)
 	}
-    ok = certPool.AppendCertsFromPEM(caCertPEM)
+	ok := certPool.AppendCertsFromPEM(caCertPEM)
     if !ok {
 		return fmt.Errorf("Invalid cert")
 	}
@@ -315,11 +347,17 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 	    ClientCAs:             certPool,
 	}
     ln, err := quic.ListenEarly(
-		udpConn,
+		afxdpConn,
 		http3.ConfigureTLSConfig(serverConf),
 		&quic.Config{
             EnableDatagrams: true,
             MaxIdleTimeout: 30*time.Second,
+			InitialStreamReceiveWindow:     10 * 1024 * 1024,  // 10 MB
+    		MaxStreamReceiveWindow:         10 * 1024 * 1024,  // 10 MB
+    		InitialConnectionReceiveWindow: 15 * 1024 * 1024,  // 15 MB
+    		MaxConnectionReceiveWindow:     15 * 1024 * 1024,  // 15 MB
+			DisablePathMTUDiscovery: true,
+			MaxIncomingStreams: 0,
         },
 	)
 	if err != nil {
@@ -329,43 +367,56 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 
 	p := connectip.Proxy{}
 	mux := http.NewServeMux()
-    ipToTunChan = make(map[string](chan []byte))
+    ipToTunChan = make(map[netip.Addr](chan *packet))
     mu = &sync.RWMutex{}
-    go func() {
-        for {
-	        b := make([]byte, 1500)
-	        n, err := tunTapDevice.Read(b)
-			logger.Trace(fmt.Sprintf("Unfiltered data %v: %x", tunTapDevice.Name(), b[:n]))
-            if err != nil {
-                logger.Error(fmt.Sprintf("Cannot read TUN/TAP device %v: %v", tunTapDevice.Name(), err))
-                cancel()
-                break
-            } else {
+	for i, dev := range tunTapDevice {
+    	go func(d *water.Interface, id int) {
+        	for {
+				pkt := packetPool.Get().(*packet)
+        		n, err := d.Read(pkt.buf)
+        		if err != nil {
+            		packetPool.Put(pkt) // return on error path too
+                	logger.Error(fmt.Sprintf("queue#%d cannot read TUN/TAP device %v: %v", id, d.Name(), err))
+            		cancel()
+            		break
+        		}
+        		pkt.n = n
                 // assuming we are only doing IPv4
-                destIP, ok := netip.AddrFromSlice(b[16:20])
+                destIP, ok := netip.AddrFromSlice(pkt.buf[16:20])
                 if ! ok {
-				    logger.Trace(fmt.Sprintf("Cannot parse data to IP. Dropping packet."))
+            		packetPool.Put(pkt) // return on error path too
+					if logger.ShouldLog(logger.TRACE) {
+				    	logger.Trace(fmt.Sprintf("queue#%d cannot parse data to IP. Dropping packet.", id))
+					}
                     continue
                 }
-				logger.Trace(fmt.Sprintf("Dest IP to filter %v", destIP.String()))
+				if logger.ShouldLog(logger.TRACE) {
+					logger.Trace(fmt.Sprintf("queue#%d dest IP to filter %v",id, destIP.String()))
+				}
+				destIP = destIP.Unmap()
                 mu.RLock()
-                tunChan, ok := ipToTunChan[destIP.String()]
+                tunChan, ok := ipToTunChan[destIP]
                 mu.RUnlock()
 				if ok {
-                	pkt := make([]byte, n)
-    				copy(pkt, b[:n])
     				select {
     					case tunChan <- pkt:
     					default:
-        					logger.Trace(fmt.Sprintf("Client %s channel full, dropping packet.", destIP.String()))
-    				}
+            				packetPool.Put(pkt) // return on error path too
+							if logger.ShouldLog(logger.TRACE) {
+        						logger.Trace(fmt.Sprintf("queue#%d client %s channel full, dropping packet.", id, destIP.String()))
+    						}
+					}
 				} else {
-                    logger.Trace(fmt.Sprintf("Cannot find connection for client IP = %s. Dropping packet.", destIP.String()))
-                }
-            }
-        }
-    }()
+            		packetPool.Put(pkt) // return on error path too
+					if logger.ShouldLog(logger.TRACE) {
+                    	logger.Trace(fmt.Sprintf("queue#%d cannot find connection for client IP = %s. Dropping packet.", id, destIP.String()))
+                	}
+				}
+        	}
+    	}(dev, i)
+	}
 	mux.HandleFunc("/vpn", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Printf("DEBUG /vpn handler reached, TLS peer certs: %d\n", len(r.TLS.PeerCertificates))
         commonName := r.TLS.PeerCertificates[0].Subject.CommonName
     	clientId, err := strconv.ParseInt(commonName, 10, 64)
 		if err != nil {
@@ -373,7 +424,9 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		logger.Debug(fmt.Sprintf("Handle new HTTP client %v", clientId))
+		if logger.ShouldLog(logger.DEBUG) {
+			logger.Debug(fmt.Sprintf("Handle new HTTP client %v", clientId))
+		}
         conCtx := context.WithValue(ctx, "clientId", clientId)
 		req, err := connectip.ParseRequest(r, template)
 		if err != nil {
@@ -396,7 +449,7 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 			logger.Fatal(fmt.Sprintf("failed to create send socket: %v", err))
 		}
 
-		if err := handleConn(&conCtx, make(chan []byte, 256), conn, ipProtocol, fdSnd); err != nil {
+		if err := handleConn(conCtx, make(chan *packet, 256), conn, ipProtocol, fdSnd); err != nil {
 			logger.Error(fmt.Sprintf("failed to handle connection: %v", err))
 			return
 		}
@@ -407,24 +460,31 @@ func run(ctxt context.Context, upChan chan<- bool, bindTo netip.AddrPort, ipProt
 		EnableDatagrams: true,
 	}
 	upChan <- true
-	go s.ServeListener(ln)
+	go func() {
+		if err := s.ServeListener(ln); err != nil {
+			logger.Fatal(fmt.Sprintf("ServeListener error: %v", err))
+		}
+	}()
 	defer s.Close()
 	<-ctx.Done()
 	upChan <- false
 	return nil
 }
 
-func handleConn(ctx *context.Context, tunChan chan []byte,  conn *connectip.Conn, ipProtocol uint8, fd int) error {
-	setupCtx, setupCancel := context.WithTimeout(*ctx, 5*time.Second)
+func handleConn(ctx context.Context, tunChan chan *packet,  conn *connectip.Conn, ipProtocol uint8, fd int) error {
+	setupCtx, setupCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer setupCancel()
-    logger.Debug("Start connectip flow")
+	if logger.ShouldLog(logger.DEBUG) {
+    	logger.Debug("Start connectip flow")
+	}
     // Get the next unassigned address
     // And assign prefix = IP/32 to the client
     // Note:
     // We can assign any subnet size here but I'm using /32 for simplicity
     // I may want to go back to this hardcoded number when I see issues for site-to-side VPN
-    clientId := (*ctx).Value("clientId").(int64)
+    clientId := ctx.Value("clientId").(int64)
     peerAddr, perr := service.AssignIPToClient(setupCtx, clientId)
+	logger.Info(fmt.Sprintf("Assigned IP %s to client %d", peerAddr, clientId))
     if perr != nil {
         return fmt.Errorf("Failed to get available IP: %w", perr)
     }
@@ -438,7 +498,7 @@ func handleConn(ctx *context.Context, tunChan chan []byte,  conn *connectip.Conn
 		return fmt.Errorf("failed to assign addresses: %w", err)
 	}
     mu.Lock()
-    ipToTunChan[peerAddr] = tunChan
+    ipToTunChan[addr] = tunChan
     mu.Unlock()
     clientResources, cerr := service.GetClientResources(setupCtx, clientId)
     if cerr != nil {
@@ -458,51 +518,103 @@ func handleConn(ctx *context.Context, tunChan chan []byte,  conn *connectip.Conn
 	}
 
 	errChan := make(chan error, 2)
+	pktChan := make(chan *packet, 64)
 	go func() {
-		for {
-			b := make([]byte, 1500)
-			n, err := conn.ReadPacket(b)
-			if err != nil {
-				errChan <- fmt.Errorf("failed to read from MASQUE connection: %w", err)
-				return
-			}
-            logger.Trace(fmt.Sprintf("TUN -> WAN: read %d bytes, response payload = %x", n, b[:n]))
-			if err := utility.SendOnSocket(fd, b[:n]); err != nil {
-				errChan <- fmt.Errorf("writing to server socket: %w", err)
-				return
-			}
-		}
+    	// reader goroutine
+    	go func() {
+        	b := make([]byte, 1500)
+        	for {
+            	n, err := conn.ReadPacket(b)
+            	if err != nil {
+                	close(pktChan)
+                	errChan <- err
+                	return
+            	}
+				p := packetPool.Get().(*packet)
+        		p.n = n
+        		copy(p.buf[:n], b[:n])
+        		pktChan <- p
+        	}
+    	}()
+	
+    	batch := utility.NewSocketBatch(fd)
+    	ticker := time.NewTicker(5 * time.Millisecond)
+    	defer ticker.Stop()
+    	for {
+        	select {
+        	case pkt, ok := <-pktChan:
+            	if !ok {
+                	batch.Flush()
+                	return
+            	}
+				batch.Add(pkt.buf[:pkt.n])
+				packetPool.Put(pkt)
+				for len(pktChan) > 0 && !batch.Full() {
+                	pkt = <-pktChan
+					batch.Add(pkt.buf[:pkt.n])
+					packetPool.Put(pkt)
+            	}
+            	if batch.Full() {
+                	if err := batch.Flush(); err != nil {
+                    	logger.Error(fmt.Sprintf("sendmmsg error: %v", err))
+                	}
+            	}
+        	case <-ticker.C:
+            	if err := batch.Flush(); err != nil {
+                	logger.Error(fmt.Sprintf("sendmmsg error: %v", err))
+            	}
+        	}
+    	}
 	}()
 
+	timer := time.NewTimer(5 * time.Millisecond)
+	defer timer.Stop()
 	go func() {
 		for {
-            data := <-tunChan
-			logger.Debug(fmt.Sprintf("tunChan len=%d cap=256 for client %s", len(tunChan), peerAddr))
-            logger.Trace(fmt.Sprintf("WAN -> TUN: read %d bytes, response payload = %x", len(data), data))
-			icmp, err := conn.WritePacket(data)
-			if err != nil {
-				if errors.Is(err, net.ErrClosed) {
-        			errChan <- err  // fatal, connection is gone
-        			return
+            pkt, ok := <-tunChan
+			if !ok {
+				select {
+        			case errChan <- fmt.Errorf("tunChan closed"):
+        			default:
     			}
-				// maybe the packet queue is just full
-				// as a VPN server we drop packet
-				// and transportation layer (L4) can retry
-				errChan <- fmt.Errorf("failed to write to MASQUE connection, drop packet: %w", err)
+				return
 			}
-			if len(icmp) > 0 {
-				if err := utility.SendOnSocket(fd, icmp); err != nil {
-					logger.Error(fmt.Sprintf("failed to send ICMP packet: %v", err))
-				}
+			if logger.ShouldLog(logger.TRACE) {
+            	logger.Trace(fmt.Sprintf("WAN -> TUN: read %d bytes, payload = %x", pkt.n, pkt))
 			}
+			// WritePacket → SendDatagram → datagramQueue.Add is non-blocking.
+        	// No goroutine needed.
+        	icmp, err := conn.WritePacket(pkt.buf[:pkt.n])
+        	packetPool.Put(pkt)
+	
+        	if err != nil {
+            	if errors.Is(err, net.ErrClosed) {
+                	select {
+                		case errChan <- err:
+                		default:
+                	}
+                	return
+            	}
+            	// datagram queue full — drop, L4 will retry
+            	continue
+        	}
+        	if len(icmp) > 0 {
+            	if err := utility.SendOnSocket(fd, icmp); err != nil {
+                	logger.Error(fmt.Sprintf("failed to send ICMP: %v", err))
+            	}
+        	}
 		}
 	}()
 
 	err := <-errChan
-	logger.Error(fmt.Sprintf("error proxying: %v", err))
-	mu.Lock()
-	delete(ipToTunChan, peerAddr)
-	mu.Unlock()
+	logger.Error(fmt.Sprintf("handleConn exiting for client addr=%s err=%v", addr, err))
+    mu.Lock()
+    delete(ipToTunChan, addr)
+    mu.Unlock()
+	close(tunChan)
+	for pkt := range tunChan {
+		packetPool.Put(pkt)
+	}
 	conn.Close()
 	<-errChan // wait for the other goroutine to finish
 	unix.Close(fd)
