@@ -1,6 +1,0 @@
-integration/client/client
-integration/server/server
-integration/proxy/proxy
-integration/proxy/*.pem
-integration/logs*
-logs/
