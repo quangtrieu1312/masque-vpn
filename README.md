@@ -1,13 +1,13 @@
-# masque-vpn
+# tmasque-vpn
 
-A VPN implementation built on top of the [MASQUE](https://ietf-wg-masque.github.io/) protocol — IP tunneling over HTTP/3 and QUIC. The server supports multiple simultaneous clients with per-client IP assignment, role-based access control, and a Unix socket management API.
+A VPN implementation built on top of the [MASQUE](https://ietf-wg-tmasque.github.io/) protocol — IP tunneling over HTTP/3 and QUIC. The server supports multiple simultaneous clients with per-client IP assignment, role-based access control, and a Unix socket management API.
 
 ---
 
 ## How it works
 
 ```
-Client (masque)                Server (masqued)
+Client (tmasque)                Server (tmasqued)
   │                              │
   │── QUIC (UDP/443) ──────────► │
   │   HTTP/3 CONNECT-IP          │
@@ -18,7 +18,7 @@ Client (masque)                Server (masqued)
   │                           raw socket → WAN
 ```
 
-The client (`masque`) establishes a QUIC connection to the server (`masqued`), upgrades it to an HTTP/3 `CONNECT-IP` session, and receives a `/32` IP address and a set of routes from the server. The server creates a TUN device and multiplexes packets from all connected clients using a per-client channel map keyed by assigned IP.
+The client (`tmasque`) establishes a QUIC connection to the server (`tmasqued`), upgrades it to an HTTP/3 `CONNECT-IP` session, and receives a `/32` IP address and a set of routes from the server. The server creates a TUN device and multiplexes packets from all connected clients using a per-client channel map keyed by assigned IP.
 
 Client identity is derived from the **Common Name** of the client's mTLS certificate, which is set to the client's database ID at cert generation time. This is how the server looks up per-client routes at connection time.
 
@@ -27,13 +27,13 @@ Client identity is derived from the **Common Name** of the client's mTLS certifi
 ## Repository layout
 
 ```
-masque-vpn/
+tmasque-vpn/
 ├── client/
 │   ├── src/                    # Go source (main.go, logger.go, ip.go, rand.go)
-│   ├── masque.conf.template    # Client config template
+│   ├── tmasque.conf.template    # Client config template
 │   ├── Vagrantfile             # Vagrant VM for bare-metal testing
 │   ├── packaging/alpine/       # Alpine APK packaging files
-│   └── build.sh                # Local build script (outputs to client/build/masque)
+│   └── build.sh                # Local build script (outputs to client/build/tmasque)
 │
 └── server/
     ├── src/                    # Go source
@@ -49,7 +49,7 @@ masque-vpn/
     │   ├── service/            # Business logic
     │   └── utility/            # IP math, raw socket helpers
     ├── scripts/
-    │   ├── run.sh              # Container entrypoint (cert bootstrap + start masqued)
+    │   ├── run.sh              # Container entrypoint (cert bootstrap + start tmasqued)
     │   ├── gen_client.sh       # Create a named client + generate its cert
     │   ├── gen_client_cert.sh  # Generate Ed25519 cert for a client
     │   ├── gen_client_CA.sh    # Bootstrap the client CA
@@ -59,7 +59,7 @@ masque-vpn/
     │   ├── postup/             # SNAT rules applied after VPN comes up
     │   └── predown/            # SNAT rule teardown before shutdown
     ├── extras/                 # OpenSSL .conf files for CA and cert requests
-    ├── masqued.conf.template   # Server config template
+    ├── tmasqued.conf.template   # Server config template
     └── docker-compose.yml
 ```
 
@@ -82,13 +82,13 @@ masque-vpn/
 Copy the template and fill in your values:
 
 ```sh
-cp server/masqued.conf.template server/masqued.conf
+cp server/tmasqued.conf.template server/tmasqued.conf
 ```
 
 | Key | Required | Description | Example |
 |-----|----------|-------------|---------| 
 | `LOG_LEVEL` | yes | Verbosity: `fatal`, `error`, `warn`, `info`, `debug`, `trace` | `info` |
-| `LOG_PATH` | yes | Log file path | `/etc/masqued/log` |
+| `LOG_PATH` | yes | Log file path | `/etc/tmasqued/log` |
 | `WAN_INTERFACE` | yes | Host's WAN interface name | `eth0` |
 | `BIND_ADDR` | yes | QUIC listener bind address | `0.0.0.0` |
 | `LISTEN_PORT` | yes | QUIC listener port | `443` |
@@ -111,9 +111,9 @@ sudo docker compose up --build -d
 On first boot, `run.sh` automatically:
 1. Generates the server CA and server TLS certificate (Ed25519)
 2. Generates the client CA
-3. Starts `masqued` (the MASQUE daemon)
+3. Starts `tmasqued` (the MASQUE daemon)
 
-`masqued` itself then handles on startup:
+`tmasqued` itself then handles on startup:
 1. Runs database migrations (SQLite, schema v1)
 2. Enables IP forwarding and disables reverse-path filtering (bootstrap scripts)
 3. Starts the QUIC listener and management Unix socket (post-up scripts + SNAT rules)
@@ -127,7 +127,7 @@ On first boot, `run.sh` automatically:
 Run this on the server (or via `docker compose exec`) with a name for the new client:
 
 ```sh
-sudo docker compose exec masqued genClient alice
+sudo docker compose exec tmasqued genClient alice
 ```
 
 This registers `alice` in the database, generates an Ed25519 key pair signed by the client CA, and saves a `bundle.zip` to:
@@ -147,24 +147,24 @@ The zip contains `client.crt`, `client.key`, and `ca.crt` (a symlink to the serv
 scp server/certs/client/alice/bundle.zip user@client-host:~
 
 # On the client
-mkdir -p /etc/masque/certs
-cd /etc/masque/certs
+mkdir -p /etc/tmasque/certs
+cd /etc/tmasque/certs
 unzip ~/bundle.zip
 ```
 
 ### 3. Configure the client
 
 ```sh
-cp /path/to/masque.conf.template /etc/masque/masque.conf
+cp /path/to/tmasque.conf.template /etc/tmasque/tmasque.conf
 ```
 
-Edit `/etc/masque/masque.conf`:
+Edit `/etc/tmasque/tmasque.conf`:
 
 | Key | Required | Description | Example |
 |-----|----------|-------------|---------| 
 | `LOG_LEVEL` | yes | Verbosity | `info` |
 | `ENABLE_KEY_LOG` | yes | Write TLS session keys (Wireshark) | `false` |
-| `KEY_LOG_PATH` | yes | Path for TLS key log file | `/tmp/masque_keylog.txt` |
+| `KEY_LOG_PATH` | yes | Path for TLS key log file | `/tmp/tmasque_keylog.txt` |
 | `SERVER` | yes | Server address as `FQDN[:port]` (default port: 443) | `vpn.example.com:443` |
 | `FWMARK` | yes | Socket firewall mark used for routing rule (policy routing) | `9484` |
 
@@ -172,20 +172,20 @@ The following paths are compiled into the client binary and are **not** configur
 
 | Path | Value |
 |------|-------|
-| Config file | `/etc/masque/masque.conf` |
-| Server CA cert | `/etc/masque/certs/ca.crt` |
-| Client cert | `/etc/masque/certs/client.crt` |
-| Client key | `/etc/masque/certs/client.key` |
-| Log file | `/var/log/masque.log` |
+| Config file | `/etc/tmasque/tmasque.conf` |
+| Server CA cert | `/etc/tmasque/certs/ca.crt` |
+| Client cert | `/etc/tmasque/certs/client.crt` |
+| Client key | `/etc/tmasque/certs/client.key` |
+| Log file | `/var/log/tmasque.log` |
 
-Place the certs from `bundle.zip` at the above paths (which `unzip` into `/etc/masque/certs/` does automatically).
+Place the certs from `bundle.zip` at the above paths (which `unzip` into `/etc/tmasque/certs/` does automatically).
 
 ### 4. Run the client
 
 **Binary (bare metal / Alpine APK):**
 
 ```sh
-sudo masque -f /etc/masque/masque.conf
+sudo tmasque -f /etc/tmasque/tmasque.conf
 ```
 
 **Build from source:**
@@ -193,15 +193,15 @@ sudo masque -f /etc/masque/masque.conf
 ```sh
 cd client
 ./build.sh
-# binary at client/build/masque
-sudo ./build/masque
+# binary at client/build/tmasque
+sudo ./build/tmasque
 ```
 
 ---
 
 ## Management API
 
-The server (`masqued`) exposes an HTTP API over a Unix socket at `/var/run/masqued.sock`. All management tooling (including `genClient`) communicates through this socket. You can reach it directly with `curl --unix-socket`.
+The server (`tmasqued`) exposes an HTTP API over a Unix socket at `/var/run/tmasqued.sock`. All management tooling (including `genClient`) communicates through this socket. You can reach it directly with `curl --unix-socket`.
 
 ### Clients
 
@@ -252,32 +252,32 @@ Resources are CIDR prefixes that the server advertises as routes to any client h
 
 ```sh
 # Create client "alice" (also auto-creates and assigns role "alice")
-curl --unix-socket /var/run/masqued.sock \
-  -X POST 'http://masqued/client?type=upsert' \
+curl --unix-socket /var/run/tmasqued.sock \
+  -X POST 'http://tmasqued/client?type=upsert' \
   -d '{"names": ["alice"]}'
 # → {"ids":[1]}
 
 # List all clients
-curl --unix-socket /var/run/masqued.sock http://masqued/client
+curl --unix-socket /var/run/tmasqued.sock http://tmasqued/client
 
 # Create a resource (CIDR prefix)
-curl --unix-socket /var/run/masqued.sock \
-  -X POST 'http://masqued/resource?type=upsert' \
+curl --unix-socket /var/run/tmasqued.sock \
+  -X POST 'http://tmasqued/resource?type=upsert' \
   -d '{"resources": [{"name": "corp-net", "value": "10.0.0.0/8"}]}'
 
 # Assign resource 1 to role 1 (alice's auto-created role)
-curl --unix-socket /var/run/masqued.sock \
-  -X POST 'http://masqued/role?type=assign' \
+curl --unix-socket /var/run/tmasqued.sock \
+  -X POST 'http://tmasqued/role?type=assign' \
   -d '{"role_ids": [1], "resource_ids": [1]}'
 
 # Check what resources alice can reach
-curl --unix-socket /var/run/masqued.sock \
-  -X POST 'http://masqued/resource?type=client' \
+curl --unix-socket /var/run/tmasqued.sock \
+  -X POST 'http://tmasqued/resource?type=client' \
   -d '{"client_id": 1}'
 
 # Delete client 1
-curl --unix-socket /var/run/masqued.sock \
-  -X DELETE 'http://masqued/client' \
+curl --unix-socket /var/run/tmasqued.sock \
+  -X DELETE 'http://tmasqued/client' \
   -d '{"ids": [1]}'
 ```
 
@@ -289,7 +289,7 @@ curl --unix-socket /var/run/masqued.sock \
 Client ──(many-to-many)──► Role ──(many-to-many)──► Resource (CIDR prefix)
 ```
 
-When a client connects, `masqued`:
+When a client connects, `tmasqued`:
 1. Looks up the client's roles via the mTLS certificate CN (client DB ID)
 2. Collects all resources (CIDR prefixes) associated with those roles
 3. Advertises those prefixes as routes to the client via `CONNECT-IP`
@@ -323,15 +323,15 @@ The `bundle.zip` generated by `genClient` contains:
 
 - All keys are Ed25519. No RSA, no ECDSA.
 - The `ENABLE_KEY_LOG` option writes TLS session keys to disk for Wireshark-based debugging. **Never enable this in production.**
-- Raw sockets require `CAP_NET_ADMIN` and `CAP_NET_RAW`. The `masqued` binary has `cap_net_admin+ep` applied at runtime by `run.sh`.
+- Raw sockets require `CAP_NET_ADMIN` and `CAP_NET_RAW`. The `tmasqued` binary has `cap_net_admin+ep` applied at runtime by `run.sh`.
 
 ---
 
 ## Troubleshooting
 
-**`masque` fails to connect with `failed to dial QUIC connection`**
+**`tmasque` fails to connect with `failed to dial QUIC connection`**
 - Confirm port 443/UDP is open on the server firewall
-- Confirm `SERVER` in `masque.conf` resolves to the correct IP
+- Confirm `SERVER` in `tmasque.conf` resolves to the correct IP
 - Check that `ca.crt` on the client matches the server's CA
 
 **Client connects but has no routes / no internet**
@@ -343,4 +343,4 @@ The `bundle.zip` generated by `genClient` contains:
 - Check the pool with `GET /dhcp` and expand it with `PUT /dhcp` if needed
 
 **`setsockopt(SOL_SOCKET, SO_MARK) — process needs CAP_NET_ADMIN`**
-- The `masqued` binary must have `CAP_NET_ADMIN`. In Docker this is provided by `cap_add: NET_ADMIN`. Bare-metal: `sudo setcap cap_net_admin+ep ./bin`
+- The `tmasqued` binary must have `CAP_NET_ADMIN`. In Docker this is provided by `cap_add: NET_ADMIN`. Bare-metal: `sudo setcap cap_net_admin+ep ./bin`

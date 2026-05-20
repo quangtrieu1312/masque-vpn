@@ -12,7 +12,7 @@
 	url = git@github.com:quangtrieu1312/lockfree_mpmc_queue
 [submodule "server"]
 	path = server
-	url = git@github.com:quangtrieu1312/masqued.git
+	url = git@github.com:quangtrieu1312/tmasqued.git
 [submodule "client/lib/connect-ip-go"]
 	path = client/lib/connect-ip-go
 	url = git@github.com:quangtrieu1312/connect-ip-go
@@ -24,4 +24,4 @@
 	url = git@github.com:quangtrieu1312/lockfree_mpmc_queue
 [submodule "client"]
 	path = client
-	url = git@github.com:quangtrieu1312/tmasque
+	url = git@github.com:quangtrieu1312/ttmasque

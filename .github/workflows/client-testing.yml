@@ -7,7 +7,7 @@ on:
 
 env:
   ALPINE_VERSION: "3.23"
-  PKG_NAME: masque
+  PKG_NAME: tmasque
   CODEBERG_REPO: "testing"
 
 jobs:
@@ -70,14 +70,14 @@ jobs:
             -buildvcs=false \
             -ldflags="-s -w -X main.version=${{ steps.meta.outputs.pkgver }}" \
             -trimpath \
-            -o ../../dist/masque-${{ matrix.alpine_arch }} \
+            -o ../../dist/tmasque-${{ matrix.alpine_arch }} \
             .
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: masque-bin-${{ matrix.alpine_arch }}
-          path: dist/masque-${{ matrix.alpine_arch }}
+          name: tmasque-bin-${{ matrix.alpine_arch }}
+          path: dist/tmasque-${{ matrix.alpine_arch }}
           retention-days: 1
 
   # ──────────────────────────────────────────────
@@ -104,7 +104,7 @@ jobs:
       - name: Download binary
         uses: actions/download-artifact@v4
         with:
-          name: masque-bin-${{ matrix.alpine_arch }}
+          name: tmasque-bin-${{ matrix.alpine_arch }}
           path: dist/
 
       - name: Resolve version metadata
@@ -128,14 +128,14 @@ jobs:
         run: |
           # prepare workspace on host
           mkdir -p apkbuild/$PKG_NAME
-          cp dist/masque-$ALPINE_ARCH             apkbuild/$PKG_NAME/masque
-          cp client/masque.conf.template          apkbuild/$PKG_NAME/
-          cp client/packaging/alpine/masque.initd apkbuild/$PKG_NAME/
+          cp dist/tmasque-$ALPINE_ARCH             apkbuild/$PKG_NAME/tmasque
+          cp client/tmasque.conf.template          apkbuild/$PKG_NAME/
+          cp client/packaging/alpine/tmasque.initd apkbuild/$PKG_NAME/
           sed \
             -e "s|%%PKGVER%%|$PKGVER|g" \
             -e "s|%%PKGREL%%|$PKGREL|g" \
             client/packaging/alpine/APKBUILD.tpl > apkbuild/$PKG_NAME/APKBUILD
-          chmod +x apkbuild/$PKG_NAME/masque
+          chmod +x apkbuild/$PKG_NAME/tmasque
 
           # run abuild inside Alpine container
           docker run --rm \
@@ -148,7 +148,7 @@ jobs:
               su builduser -c 'abuild-keygen -a -n'
               cp /home/builduser/.abuild/*.pub /etc/apk/keys/
               chown -R builduser /apkbuild /home/builduser/.abuild
-              chmod +x /apkbuild/$PKG_NAME/masque
+              chmod +x /apkbuild/$PKG_NAME/tmasque
               su builduser -c 'cd /apkbuild/$PKG_NAME && abuild checksum && abuild -r'
               mkdir -p /repo/$ALPINE_ARCH
               find /home/builduser/packages -name '*.apk' -exec cp {} /repo/$ALPINE_ARCH/ \;

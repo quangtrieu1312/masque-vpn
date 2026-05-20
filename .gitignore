@@ -3,10 +3,10 @@ server/certs/server/**
 server/certs/client/**
 server/ca/server/**
 server/ca/client/**
-server/masqued.conf
+server/tmasqued.conf
 
 client/certs/**
-client/masque.conf
+client/tmasque.conf
 
 **/**_bpfel.go
 **/**_bpfel.o
