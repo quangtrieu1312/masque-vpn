@@ -10,3 +10,6 @@
 [submodule "lib/lockfree_mpmc_queue"]
 	path = lib/lockfree_mpmc_queue
 	url = git@github.com:quangtrieu1312/lockfree_mpmc_queue
+[submodule "server"]
+	path = server
+	url = git@github.com:quangtrieu1312/masqued.git
