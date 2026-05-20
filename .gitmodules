@@ -13,3 +13,15 @@
 [submodule "server"]
 	path = server
 	url = git@github.com:quangtrieu1312/masqued.git
+[submodule "client/lib/connect-ip-go"]
+	path = client/lib/connect-ip-go
+	url = git@github.com:quangtrieu1312/connect-ip-go
+[submodule "client/lib/quic-go"]
+	path = client/lib/quic-go
+	url = git@github.com:quangtrieu1312/quic-go
+[submodule "client/lib/lockfree_mpmc_queue"]
+	path = client/lib/lockfree_mpmc_queue
+	url = git@github.com:quangtrieu1312/lockfree_mpmc_queue
+[submodule "client"]
+	path = client
+	url = git@github.com:quangtrieu1312/tmasque
