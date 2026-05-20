@@ -171,7 +171,6 @@ func (c *Conn) ReadFrom(p []byte) (int, net.Addr, error) {
 
             c.rxMu.Lock()
             numReady := sock.NumReceived()
-			fmt.Printf("DEBUG: fd=%d events=%d numReceived=%d\n", fd, c.epollEvents[i].Events, numReady)
             var descs []xdp.Desc
             if numReady > 0 {
                 descs = sock.Receive(numReady) // drain all at once
@@ -222,10 +221,8 @@ func (c *Conn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	descs := sock.GetDescs(1, false)
 	c.txMu.Unlock()
 	if len(descs) == 0 {
-		fmt.Println("DEBUG: TX ring full, dropping packet")
 		return 0, fmt.Errorf("TX ring full, dropping packet")
 	}
-	fmt.Printf("DEBUG TX desc addr=%d len=%d\n", descs[0].Addr, descs[0].Len)
 	frame := sock.GetFrame(descs[0])
 
 	// Use the peer's MAC learned from the first inbound frame.
@@ -237,11 +234,9 @@ func (c *Conn) WriteTo(p []byte, addr net.Addr) (int, error) {
 
 	total := buildUDPFrame(frame, c.srcMAC, dstMAC, c.localAddr, dst, p)
 	descs[0].Len = uint32(total)
-	fmt.Printf("DEBUG WriteTo len=%d dst=%v dstMAC=%v srcMAC=%v\n", len(p), dst, dstMAC, c.srcMAC)
 
 	c.txMu.Lock()
-	n := sock.Transmit(descs)
-	fmt.Printf("DEBUG Transmit n=%d\n", n)
+	sock.Transmit(descs)
 	if c.mode == XDPModeGeneric {
 		if err := unix.Send(sock.FD(), nil, unix.MSG_DONTWAIT); err != nil {
     		fmt.Printf("TX kick error: %v\n", err)
@@ -249,9 +244,8 @@ func (c *Conn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	} else {
     	sock.Poll(0)
 	}
-	nc := sock.NumCompleted()
+	sock.NumCompleted()
 	c.txMu.Unlock()
-	fmt.Printf("DEBUG NumCompleted=%d\n", nc)
 	return len(p), nil
 }
 
@@ -316,7 +310,6 @@ func buildUDPFrame(frame []byte, srcMAC, dstMAC net.HardwareAddr, src, dst *net.
 	frame[40], frame[41] = 0, 0
 
 	copy(frame[42:], payload)
-	fmt.Printf("DEBUG frame = %x\n", frame)
 	return 42 + len(payload)
 }
 
