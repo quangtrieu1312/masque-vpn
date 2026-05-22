@@ -1,3 +1,4 @@
+/*
 name: Alpine APK Release
 
 on:
@@ -32,6 +33,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Install Go
         uses: actions/setup-go@v5
@@ -190,3 +193,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: release/${{ matrix.alpine_arch }}/*.apk
+*/
