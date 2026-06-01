@@ -1,346 +1,103 @@
-# tmasque-vpn
+# masque-vpn
 
-A VPN implementation built on top of the [MASQUE](https://ietf-wg-tmasque.github.io/) protocol — IP tunneling over HTTP/3 and QUIC. The server supports multiple simultaneous clients with per-client IP assignment, role-based access control, and a Unix socket management API.
+A **userspace VPN built on MASQUE** (IP-over-HTTP/3, [RFC 9484 CONNECT-IP](https://datatracker.ietf.org/doc/rfc9484/))
+with a **kernel-bypass AF_XDP + eBPF datapath**. This is the **umbrella repo** that wires the
+client and server together; the datapath internals and the **head-to-head benchmarks against
+kernel WireGuard and a no-VPN direct baseline** live in
+[**`tmasqued`**](https://github.com/quangtrieu1312/tmasqued).
+
+- **[`client/`](https://github.com/quangtrieu1312/tmasque)** → `tmasque`: dials the server, manages
+  the TUN + policy routing, pumps packets as QUIC datagrams.
+- **[`server/`](https://github.com/quangtrieu1312/tmasqued)** → `tmasqued`: the AF_XDP datapath,
+  in-kernel reverse NAT, control plane, and the performance work.
+
+**The interesting code:** &nbsp;
+[**`xdp.c`** — the eBPF XDP/NAT program](https://github.com/quangtrieu1312/tmasqued/blob/master/src/xdp/xdp.c) ·
+[**`tmasqued`** — server + AF_XDP datapath](https://github.com/quangtrieu1312/tmasqued) ·
+[**`tmasque`** — client](https://github.com/quangtrieu1312/tmasque)
 
 ---
 
-## How it works
+## How the pieces fit together
 
 ```
-Client (tmasque)                Server (tmasqued)
-  │                              │
-  │── QUIC (UDP/443) ──────────► │
-  │   HTTP/3 CONNECT-IP          │
-  │   mTLS (Ed25519)             │
-  │◄─ IP prefix assigned ────── │
-  │◄─ routes advertised ─────── │
-  │                           TUN device
-  │                           raw socket → WAN
+  ┌──────────────────┐               ┌────────────────────────────────────────┐
+  │ tmasque (client) │               │ tmasqued (server)                      │
+  │                  │               │                                        │
+  │ app → TUN        │ ─── QUIC ───→ │ :443 → decap → SNAT → forward TX       │  ──→ WAN
+  │                  │               │                                        │
+  │ app ← TUN        │ ←─── QUIC ─── │ QUIC datagram ← in-kernel DNAT (xdp.c) │  ←── WAN
+  │                  │               │                                        │
+  │ inner TCP → BBR  │               │ control plane: SQLite +                │
+  └──────────────────┘               │ Unix-socket REST API                   │
+                                     └────────────────────────────────────────┘
+
+  link:  QUIC / UDP :443 · HTTP/3 CONNECT-IP · mTLS (Ed25519)
+         inner IP in QUIC DATAGRAMs (unreliable; tunnel CC off)
 ```
 
-The client (`tmasque`) establishes a QUIC connection to the server (`tmasqued`), upgrades it to an HTTP/3 `CONNECT-IP` session, and receives a `/32` IP address and a set of routes from the server. The server creates a TUN device and multiplexes packets from all connected clients using a per-client channel map keyed by assigned IP.
+**What makes it interesting**
+- **AF_XDP data plane** — packets move between the NIC and userspace without traversing the kernel
+  network stack.
+- **Return NAT in eBPF** — the DNAT return path runs entirely in the XDP program (`xdp.c`); no
+  conntrack, no kernel-stack traversal.
+- **No tunnel-level congestion control** — inner IP rides unreliable QUIC DATAGRAMs with the QUIC
+  layer's CC disabled, so the inner TCP's own control loop governs the flow (no "TCP-over-TCP" collapse).
 
-Client identity is derived from the **Common Name** of the client's mTLS certificate, which is set to the client's database ID at cert generation time. This is how the server looks up per-client routes at connection time.
+For how this performs against kernel WireGuard, with the full matrix and the honest caveats, see
+**[tmasqued › Performance](https://github.com/quangtrieu1312/tmasqued#performance)**. Both halves
+vendor forked **`quic-go`** and **`connect-ip-go`** for the CC-off datagram dataplane; details there.
+
+Each submodule's README has the component-level detail.
+
+---
+
+## Quick start
+
+```sh
+# Server
+cd server
+cp tmasqued.conf.template tmasqued.conf      # WAN_INTERFACE, TUNNEL_IP, CLIENT_CIDR, SANs…
+sudo docker compose up --build -d            # builds binary + eBPF, bootstraps CAs, starts
+# manage by name via tmasquectl (runs inside the container):
+ctl() { sudo docker compose exec tmasqued tmasquectl "$@"; }
+ctl client create alice               # client + default role "alice" + cert bundle
+ctl resource create internet 0.0.0.0/0   # full tunnel — route all traffic through the VPN
+ctl role assign alice internet           # link it to alice's role — WITHOUT this she gets no routes
+#   → bundle at server/certs/client/alice/bundle.zip
+
+# Client (on the client machine)
+mkdir -p /etc/tmasque/certs && unzip ~/bundle.zip -d /etc/tmasque/certs
+cd client
+cp tmasque.conf.template /etc/tmasque/tmasque.conf   # set SERVER=host:443
+./build.sh && sudo ./build/tmasque
+```
+
+Requirements: Linux, Docker, `/dev/net/tun`, `NET_ADMIN` (plus `NET_RAW` on the server); an
+XDP-capable NIC/driver on the server. First boot generates the server + client CAs (Ed25519) and
+runs DB migrations.
+
+---
+
+## Access control & management
+
+Identity is the **mTLS certificate CN** (= client DB id). On connect the server
+resolves the client's **roles → resources (CIDR prefixes)** and advertises those as
+routes — a client with no resources gets no routes. Clients, roles, resources, and the
+DHCP pool are administered through a small **REST API over a Unix socket**
+(`/var/run/tmasqued.sock`); all keys are Ed25519 and the server requires + verifies
+client certs.
+
+Full endpoint reference (payloads, by-name variants, DHCP):
+[**`tmasqued/src/README.md`**](https://github.com/quangtrieu1312/tmasqued/blob/master/src/README.md).
 
 ---
 
 ## Repository layout
 
 ```
-tmasque-vpn/
-├── client/
-│   ├── src/                    # Go source (main.go, logger.go, ip.go, rand.go)
-│   ├── tmasque.conf.template    # Client config template
-│   ├── Vagrantfile             # Vagrant VM for bare-metal testing
-│   ├── packaging/alpine/       # Alpine APK packaging files
-│   └── build.sh                # Local build script (outputs to client/build/tmasque)
-│
-└── server/
-    ├── src/                    # Go source
-    │   ├── main.go             # Server entrypoint, QUIC listener, TUN device
-    │   ├── management.go       # Unix socket HTTP management API
-    │   ├── config/             # Config file loader
-    │   ├── constants/          # Compile-time path constants
-    │   ├── db/                 # SQLite connection
-    │   ├── domain/             # Data models (Client, Role, Resource, DHCP)
-    │   ├── migration/          # Schema migrations
-    │   ├── repository/         # SQL queries
-    │   ├── request/            # API request types
-    │   ├── service/            # Business logic
-    │   └── utility/            # IP math, raw socket helpers
-    ├── scripts/
-    │   ├── run.sh              # Container entrypoint (cert bootstrap + start tmasqued)
-    │   ├── gen_client.sh       # Create a named client + generate its cert
-    │   ├── gen_client_cert.sh  # Generate Ed25519 cert for a client
-    │   ├── gen_client_CA.sh    # Bootstrap the client CA
-    │   ├── gen_server_cert.sh  # Generate server TLS cert
-    │   ├── gen_server_CA.sh    # Bootstrap the server CA
-    │   ├── bootstrap/          # ip_forward + rp_filter setup
-    │   ├── postup/             # SNAT rules applied after VPN comes up
-    │   └── predown/            # SNAT rule teardown before shutdown
-    ├── extras/                 # OpenSSL .conf files for CA and cert requests
-    ├── tmasqued.conf.template   # Server config template
-    └── docker-compose.yml
+masque-vpn/
+├── client/   → submodule: tmasque   (client)
+├── server/   → submodule: tmasqued  (server + AF_XDP datapath + eBPF NAT)
+└── README.md
 ```
-
----
-
-## Requirements
-
-**Server:** Linux, Docker, `NET_ADMIN` + `NET_RAW` capabilities, `/dev/net/tun`
-
-**Client:** Linux (kernel TUN support), `NET_ADMIN` + `NET_RAW` capabilities
-
-**Toolchain (build only):** Go 1.25+ (`golang:tip-alpine3.22` Docker image)
-
----
-
-## Server setup
-
-### 1. Prepare config
-
-Copy the template and fill in your values:
-
-```sh
-cp server/tmasqued.conf.template server/tmasqued.conf
-```
-
-| Key | Required | Description | Example |
-|-----|----------|-------------|---------| 
-| `LOG_LEVEL` | yes | Verbosity: `fatal`, `error`, `warn`, `info`, `debug`, `trace` | `info` |
-| `LOG_PATH` | yes | Log file path | `/etc/tmasqued/log` |
-| `WAN_INTERFACE` | yes | Host's WAN interface name | `eth0` |
-| `BIND_ADDR` | yes | QUIC listener bind address | `0.0.0.0` |
-| `LISTEN_PORT` | yes | QUIC listener port | `443` |
-| `TUNNEL_IP` | yes | Server-side VPN tunnel IP (CIDR) | `10.76.0.1/31` |
-| `TUNNEL_MTU` | no | TUN device MTU (default: 1416) | `1416` |
-| `CLIENT_CIDR` | yes | DHCP pool for client IPs | `10.77.0.1/16` |
-| `FILTER_IP_PROTOCOL` | yes | IP protocol filter (`0` = all) | `0` |
-| `QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING` | yes | Suppress quic-go buffer warning | `true` |
-| `QUIC_GO_DISABLE_GSO` | yes | Disable Generic Segmentation Offload | `true` |
-| `SAN_DNS_LIST` | yes | Comma-separated DNS SANs for server cert | `vpn.example.com,*.example.com` |
-| `SAN_IP_LIST` | yes | Comma-separated IP SANs for server cert | `1.2.3.4` |
-
-### 2. Start the server
-
-```sh
-cd server
-sudo docker compose up --build -d
-```
-
-On first boot, `run.sh` automatically:
-1. Generates the server CA and server TLS certificate (Ed25519)
-2. Generates the client CA
-3. Starts `tmasqued` (the MASQUE daemon)
-
-`tmasqued` itself then handles on startup:
-1. Runs database migrations (SQLite, schema v1)
-2. Enables IP forwarding and disables reverse-path filtering (bootstrap scripts)
-3. Starts the QUIC listener and management Unix socket (post-up scripts + SNAT rules)
-
----
-
-## Client setup
-
-### 1. Provision a client on the server
-
-Run this on the server (or via `docker compose exec`) with a name for the new client:
-
-```sh
-sudo docker compose exec tmasqued genClient alice
-```
-
-This registers `alice` in the database, generates an Ed25519 key pair signed by the client CA, and saves a `bundle.zip` to:
-
-```
-server/certs/client/alice/bundle.zip
-```
-
-The zip contains `client.crt`, `client.key`, and `ca.crt` (a symlink to the server CA — used by the client to verify the server's TLS certificate).
-
-> **Note:** `genClient` also automatically creates a role named `alice` and assigns it to the client. Use the management API to assign resources to that role to grant the client access to CIDR prefixes.
-
-### 2. Copy certs to the client machine
-
-```sh
-# On the server
-scp server/certs/client/alice/bundle.zip user@client-host:~
-
-# On the client
-mkdir -p /etc/tmasque/certs
-cd /etc/tmasque/certs
-unzip ~/bundle.zip
-```
-
-### 3. Configure the client
-
-```sh
-cp /path/to/tmasque.conf.template /etc/tmasque/tmasque.conf
-```
-
-Edit `/etc/tmasque/tmasque.conf`:
-
-| Key | Required | Description | Example |
-|-----|----------|-------------|---------| 
-| `LOG_LEVEL` | yes | Verbosity | `info` |
-| `ENABLE_KEY_LOG` | yes | Write TLS session keys (Wireshark) | `false` |
-| `KEY_LOG_PATH` | yes | Path for TLS key log file | `/tmp/tmasque_keylog.txt` |
-| `SERVER` | yes | Server address as `FQDN[:port]` (default port: 443) | `vpn.example.com:443` |
-| `FWMARK` | yes | Socket firewall mark used for routing rule (policy routing) | `9484` |
-
-The following paths are compiled into the client binary and are **not** configurable via the config file:
-
-| Path | Value |
-|------|-------|
-| Config file | `/etc/tmasque/tmasque.conf` |
-| Server CA cert | `/etc/tmasque/certs/ca.crt` |
-| Client cert | `/etc/tmasque/certs/client.crt` |
-| Client key | `/etc/tmasque/certs/client.key` |
-| Log file | `/var/log/tmasque.log` |
-
-Place the certs from `bundle.zip` at the above paths (which `unzip` into `/etc/tmasque/certs/` does automatically).
-
-### 4. Run the client
-
-**Binary (bare metal / Alpine APK):**
-
-```sh
-sudo tmasque -f /etc/tmasque/tmasque.conf
-```
-
-**Build from source:**
-
-```sh
-cd client
-./build.sh
-# binary at client/build/tmasque
-sudo ./build/tmasque
-```
-
----
-
-## Management API
-
-The server (`tmasqued`) exposes an HTTP API over a Unix socket at `/var/run/tmasqued.sock`. All management tooling (including `genClient`) communicates through this socket. You can reach it directly with `curl --unix-socket`.
-
-### Clients
-
-| Method | Path | Body / Query | Description |
-|--------|------|--------------|-------------|
-| `GET` | `/client` | | List all clients |
-| `POST` | `/client?type=upsert` | `{"names": ["alice"]}` | Create or update clients by name. Also auto-creates a same-named role and assigns it to each new client. Returns `{"ids": [...]}`. |
-| `POST` | `/client?type=assign` | `{"client_ids": [...], "role_ids": [...]}` | Assign roles to clients |
-| `POST` | `/client?type=unassign` | `{"client_ids": [...], "role_ids": [...]}` | Remove roles from clients |
-| `DELETE` | `/client` | `{"ids": [...]}` | Delete clients by ID. Reclaims their IPs back into the DHCP pool. |
-| `GET` | `/client/{id}` | | Get a specific client |
-| `POST` | `/client/{id}` | `{"name": "new-name"}` | Rename a client |
-
-### Roles
-
-| Method | Path | Body / Query | Description |
-|--------|------|--------------|-------------|
-| `GET` | `/role` | | List all roles |
-| `POST` | `/role?type=upsert` | `{"names": ["engineering"]}` | Create or update roles by name |
-| `POST` | `/role?type=client` | `{"client_id": 1}` | List all roles assigned to a client |
-| `POST` | `/role?type=assign` | `{"role_ids": [...], "resource_ids": [...]}` | Assign resources to roles |
-| `POST` | `/role?type=unassign` | `{"role_ids": [...], "resource_ids": [...]}` | Remove resources from roles |
-| `DELETE` | `/role` | `{"ids": [...]}` | Delete roles by ID |
-| `GET` | `/role/{id}` | | Get a specific role |
-| `POST` | `/role/{id}` | `{"name": "new-name"}` | Rename a role |
-
-### Resources
-
-Resources are CIDR prefixes that the server advertises as routes to any client holding a role that grants those resources.
-
-| Method | Path | Body / Query | Description |
-|--------|------|--------------|-------------|
-| `GET` | `/resource` | | List all resources |
-| `POST` | `/resource?type=upsert` | `{"resources": [{"name": "corp-net", "value": "10.0.0.0/8"}]}` | Create or update resources. `value` is the CIDR prefix. On name conflict, updates `value`. |
-| `POST` | `/resource?type=client` | `{"client_id": 1}` | List all resources reachable by a client (via its roles) |
-| `DELETE` | `/resource` | `{"ids": [...]}` | Delete resources by ID |
-| `GET` | `/resource/{id}` | | Get a specific resource |
-| `POST` | `/resource/{id}` | `{"name": "new-name"}` | Rename a resource |
-
-### DHCP
-
-| Method | Path | Body | Description |
-|--------|------|------|-------------|
-| `GET` | `/dhcp` | | Get the current available IP ranges |
-| `PUT` | `/dhcp` | `{"first_ip": <int>, "last_ip": <int>}` | Replace the IP pool (integer-encoded IPv4 addresses). |
-
-### Examples
-
-```sh
-# Create client "alice" (also auto-creates and assigns role "alice")
-curl --unix-socket /var/run/tmasqued.sock \
-  -X POST 'http://tmasqued/client?type=upsert' \
-  -d '{"names": ["alice"]}'
-# → {"ids":[1]}
-
-# List all clients
-curl --unix-socket /var/run/tmasqued.sock http://tmasqued/client
-
-# Create a resource (CIDR prefix)
-curl --unix-socket /var/run/tmasqued.sock \
-  -X POST 'http://tmasqued/resource?type=upsert' \
-  -d '{"resources": [{"name": "corp-net", "value": "10.0.0.0/8"}]}'
-
-# Assign resource 1 to role 1 (alice's auto-created role)
-curl --unix-socket /var/run/tmasqued.sock \
-  -X POST 'http://tmasqued/role?type=assign' \
-  -d '{"role_ids": [1], "resource_ids": [1]}'
-
-# Check what resources alice can reach
-curl --unix-socket /var/run/tmasqued.sock \
-  -X POST 'http://tmasqued/resource?type=client' \
-  -d '{"client_id": 1}'
-
-# Delete client 1
-curl --unix-socket /var/run/tmasqued.sock \
-  -X DELETE 'http://tmasqued/client' \
-  -d '{"ids": [1]}'
-```
-
----
-
-## Access control model
-
-```
-Client ──(many-to-many)──► Role ──(many-to-many)──► Resource (CIDR prefix)
-```
-
-When a client connects, `tmasqued`:
-1. Looks up the client's roles via the mTLS certificate CN (client DB ID)
-2. Collects all resources (CIDR prefixes) associated with those roles
-3. Advertises those prefixes as routes to the client via `CONNECT-IP`
-
-A client with no roles assigned (or roles with no resources) receives no routes and cannot tunnel any traffic.
-
-When a client is created via `genClient` or `POST /client?type=upsert`, a role with the same name is automatically created and assigned to it. This default role starts with no resources — assign CIDR resources to it to grant access.
-
----
-
-## Certificate architecture
-
-```
-Server CA (Ed25519, 10yr)
-  └── server.crt  (Ed25519, signed by Server CA)
-          Used for: QUIC/TLS server authentication
-
-Client CA (Ed25519, 10yr)
-  └── client.crt  (Ed25519, signed by Client CA, CN = client DB ID)
-          Used for: mTLS client authentication + client identity
-```
-
-The server trusts the Client CA and requires client certificates (`RequireAndVerifyClientCert`). The client trusts the Server CA. There is no cross-signing — the two CAs are independent.
-
-The `bundle.zip` generated by `genClient` contains:
-- `client.crt` — client certificate signed by the Client CA
-- `client.key` — client Ed25519 private key
-- `ca.crt` — symlink to the **Server** CA certificate (so the client can verify the server's TLS cert)
-
-## Security notes
-
-- All keys are Ed25519. No RSA, no ECDSA.
-- The `ENABLE_KEY_LOG` option writes TLS session keys to disk for Wireshark-based debugging. **Never enable this in production.**
-- Raw sockets require `CAP_NET_ADMIN` and `CAP_NET_RAW`. The `tmasqued` binary has `cap_net_admin+ep` applied at runtime by `run.sh`.
-
----
-
-## Troubleshooting
-
-**`tmasque` fails to connect with `failed to dial QUIC connection`**
-- Confirm port 443/UDP is open on the server firewall
-- Confirm `SERVER` in `tmasque.conf` resolves to the correct IP
-- Check that `ca.crt` on the client matches the server's CA
-
-**Client connects but has no routes / no internet**
-- The client may have no roles assigned, or the roles have no resources
-- Use `genClient` and the management API to assign CIDR resources to the client's role
-
-**`Failed to get available IP`**
-- The DHCP pool may be exhausted
-- Check the pool with `GET /dhcp` and expand it with `PUT /dhcp` if needed
-
-**`setsockopt(SOL_SOCKET, SO_MARK) — process needs CAP_NET_ADMIN`**
-- The `tmasqued` binary must have `CAP_NET_ADMIN`. In Docker this is provided by `cap_add: NET_ADMIN`. Bare-metal: `sudo setcap cap_net_admin+ep ./bin`
