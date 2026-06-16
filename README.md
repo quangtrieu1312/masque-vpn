@@ -2,38 +2,43 @@
 
 A **userspace VPN built on MASQUE** (IP-over-HTTP/3, [RFC 9484 CONNECT-IP](https://datatracker.ietf.org/doc/rfc9484/))
 with a **kernel-bypass AF_XDP + eBPF datapath**. This is the **umbrella repo** that wires the
-client and server together; the datapath internals and the **head-to-head benchmarks against
-kernel WireGuard and a no-VPN direct baseline** live in
-[**`tmasqued`**](https://github.com/quangtrieu1312/tmasqued).
+client and server together; the datapath internals live in
+[**`tmasqued`**](https://github.com/quangtrieu1312/tmasqued), and the **head-to-head benchmarks vs
+kernel WireGuard and a no-VPN baseline** (full matrix + caveats) live in
+[**`tmasque-bench`**](https://github.com/quangtrieu1312/tmasque-bench).
 
 - **[`client/`](https://github.com/quangtrieu1312/tmasque)** → `tmasque`: dials the server, manages
   the TUN + policy routing, pumps packets as QUIC datagrams.
 - **[`server/`](https://github.com/quangtrieu1312/tmasqued)** → `tmasqued`: the AF_XDP datapath,
   in-kernel reverse NAT, control plane, and the performance work.
 
-**The interesting code:** &nbsp;
-[**`xdp.c`** — the eBPF XDP/NAT program](https://github.com/quangtrieu1312/tmasqued/blob/master/src/xdp/xdp.c) ·
-[**`tmasqued`** — server + AF_XDP datapath](https://github.com/quangtrieu1312/tmasqued) ·
-[**`tmasque`** — client](https://github.com/quangtrieu1312/tmasque)
+**The one file worth reading:**
+[**`xdp.c`** — the eBPF XDP program that does reverse-NAT in-kernel on the return path](https://github.com/quangtrieu1312/tmasqued/blob/master/src/xdp/xdp.c).
 
 ---
 
 ## How the pieces fit together
 
 ```
-  ┌──────────────────┐               ┌────────────────────────────────────────┐
-  │ tmasque (client) │               │ tmasqued (server)                      │
-  │                  │               │                                        │
-  │ app → TUN        │ ─── QUIC ───→ │ :443 → decap → SNAT → forward TX       │  ──→ WAN
-  │                  │               │                                        │
-  │ app ← TUN        │ ←─── QUIC ─── │ QUIC datagram ← in-kernel DNAT (xdp.c) │  ←── WAN
-  │                  │               │                                        │
-  │ inner TCP → BBR  │               │ control plane: SQLite +                │
-  └──────────────────┘               │ Unix-socket REST API                   │
-                                     └────────────────────────────────────────┘
-
-  link:  QUIC / UDP :443 · HTTP/3 CONNECT-IP · mTLS (Ed25519)
-         inner IP in QUIC DATAGRAMs (unreliable; tunnel CC off)
+┌─ tmasque (client) ─────────────────────────────────────┐
+│ host applications send selected traffic through a      │
+│ local TUN device (details in the tmasque repo)         │
+└────────────────────────────────────────────────────────┘
+             │  ▲
+             ▼  │   QUIC / UDP :443 · HTTP/3 CONNECT-IP · mTLS
+             │  │   inner IP carried in QUIC DATAGRAMs (tunnel CC off)
+             │  │
+┌─ tmasqued (server) ────────────────────────────────────┐
+│ terminates the tunnel, then NATs and forwards          │
+│ traffic both ways (internals in the tmasqued repo)     │
+└────────────────────────────────────────────────────────┘
+             │  ▲
+             ▼  │   plain inner IP — ordinary kernel forwarding / NAT
+             │  │
+┌─ destination ──────────────────────────────────────────┐
+│ a WAN host, a LAN host behind the server, or           │
+│ another connected VPN client                           │
+└────────────────────────────────────────────────────────┘
 ```
 
 **What makes it interesting**
@@ -44,9 +49,9 @@ kernel WireGuard and a no-VPN direct baseline** live in
 - **No tunnel-level congestion control** — inner IP rides unreliable QUIC DATAGRAMs with the QUIC
   layer's CC disabled, so the inner TCP's own control loop governs the flow (no "TCP-over-TCP" collapse).
 
-For how this performs against kernel WireGuard, with the full matrix and the honest caveats, see
-**[tmasqued › Performance](https://github.com/quangtrieu1312/tmasqued#performance)**. Both halves
-vendor forked **`quic-go`** and **`connect-ip-go`** for the CC-off datagram dataplane; details there.
+For how this performs against kernel WireGuard — full matrix, both directions, every NIC-steering
+setting, with the honest caveats — see **[tmasque-bench](https://github.com/quangtrieu1312/tmasque-bench)**.
+Both halves vendor forked **`quic-go`** and **`connect-ip-go`** for the CC-off datagram dataplane.
 
 Each submodule's README has the component-level detail.
 
@@ -79,17 +84,12 @@ runs DB migrations.
 
 ---
 
-## Access control & management
+## Access control
 
-Identity is the **mTLS certificate CN** (= client DB id). On connect the server
-resolves the client's **roles → resources (CIDR prefixes)** and advertises those as
-routes — a client with no resources gets no routes. Clients, roles, resources, and the
-DHCP pool are administered through a small **REST API over a Unix socket**
-(`/var/run/tmasqued.sock`); all keys are Ed25519 and the server requires + verifies
-client certs.
-
-Full endpoint reference (payloads, by-name variants, DHCP):
-[**`tmasqued/src/README.md`**](https://github.com/quangtrieu1312/tmasqued/blob/master/src/README.md).
+Identity is the client's **mTLS cert CN**; the server maps **roles → resources (CIDR routes)**
+and advertises only those — no resources, no routes. Manage by name with `tmasquectl` (see
+Quick start) or the Unix-socket REST API; full model + endpoint reference live in
+[**`tmasqued`**](https://github.com/quangtrieu1312/tmasqued#administration--tmasquectl).
 
 ---
 
